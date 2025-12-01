@@ -1,0 +1,22 @@
+
+User: Pergunta sobre um dado dataset
+    -> Manda o path para o dataset (obrigatório)
+    -> Diz o target que quer estudar, por exemplo por exemplo loan_approve (opcional)
+    -> Diz quais varíaveis são protected (opcional)
+
+1.º Agente -- 'O Avaliador'
+    Irá analisar o pedido do user e tentar identificar com o prompt do user os atributos obrigatórios/opcionais
+        -> Deve ser em formato JSON
+
+2.º Agente -- 'The caller'
+    Irá chamar ass funções de métricas mais relevantes para o dado .csv em estudo
+        -> Chamar o overview do dataset, e colocar os atributos necessários para chamar a função
+
+3.º Agente -- 'The Finder'
+    Irá tentar encontrar potenciais problemas que o user nao forneceu (campos protegidos, etc)
+
+4.º Agente -- 'The Judge'
+    Irá avaliar se o resultado dos agentes é minimamente satisfat+orio, caso contrario irá tentar fazer o agente corrigir
+
+5.º Agente -- 'The Summarizer'
+    Irá tentar exprimir ao user final os resultados obtidos pelas diferentes tools

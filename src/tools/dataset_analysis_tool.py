@@ -1,16 +1,12 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Any
 import json
-from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
 from sklearn.preprocessing import LabelEncoder
 from scipy import stats
-from collections import Counter
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 try:
     from ydata_profiling import ProfileReport 
@@ -19,7 +15,7 @@ except ImportError:
 
 try:
     from aif360.datasets import BinaryLabelDataset
-    from aif360.metrics import BinaryLabelDatasetMetric, ClassificationMetric
+    from aif360.metrics import BinaryLabelDatasetMetric
     AIF360_AVAILABLE = True
 except ImportError:
     AIF360_AVAILABLE = False
@@ -42,7 +38,6 @@ class DatasetEvaluator:
             if col.lower() in common_targets:
                 return col
         
-        # Return last column as fallback
         return self.df.columns[-1] if len(self.df.columns) > 0 else None
     
     def _detect_sensitive_attributes(self) -> List[str]:
@@ -57,7 +52,7 @@ class DatasetEvaluator:
         return detected
     
     def evaluate_all(self) -> Dict[str, Any]:
-        print("🔍 Starting comprehensive dataset evaluation...")
+        print("Starting comprehensive dataset evaluation...")
         
         self.report['basic_info'] = self.analyze_basic_info()
         self.report['missing_data'] = self.analyze_missing_data()
@@ -71,7 +66,7 @@ class DatasetEvaluator:
         self.report['automated_profiling'] = self.generate_automated_profile()
         self.report['overall_quality_score'] = self.calculate_quality_score()
         
-        print("✅ Evaluation complete!")
+        print("Evaluation complete!")
         return self.report
     
     def analyze_basic_info(self) -> Dict[str, Any]:
@@ -98,7 +93,6 @@ class DatasetEvaluator:
         
         missing_info = missing_info[missing_info['missing_count'] > 0]
         
-        # Check for missing data patterns
         missing_pattern = self.df.isnull().astype(int)
         pattern_counts = missing_pattern.value_counts().head(10)
         
@@ -113,16 +107,16 @@ class DatasetEvaluator:
     
     def _missing_data_recommendation(self, missing_info: pd.DataFrame) -> str:
         if len(missing_info) == 0:
-            return "✅ No missing data detected. Dataset is complete."
+            return "No missing data detected. Dataset is complete."
         
         max_missing = missing_info['missing_percentage'].max()
         
         if max_missing > 50:
-            return "⚠️ CRITICAL: Some columns have >50% missing data. Consider removing these columns."
+            return "CRITICAL: Some columns have >50% missing data. Consider removing these columns."
         elif max_missing > 20:
-            return "⚠️ WARNING: Significant missing data detected. Use imputation or consider impact on model."
+            return "WARNING: Significant missing data detected. Use imputation or consider impact on model."
         else:
-            return "ℹ️ Minor missing data detected. Simple imputation should suffice."
+            return "Minor missing data detected. Simple imputation should suffice."
     
     def analyze_data_quality(self) -> Dict[str, Any]:
         issues = []
@@ -179,16 +173,16 @@ class DatasetEvaluator:
         
         if imbalance_ratio < 1.5:
             balance_status = "BALANCED"
-            recommendation = "✅ Classes are well balanced."
+            recommendation = "Classes are well balanced."
         elif imbalance_ratio < 3:
             balance_status = "SLIGHTLY_IMBALANCED"
-            recommendation = "ℹ️ Minor imbalance. Consider stratified sampling."
+            recommendation = "ℹMinor imbalance. Consider stratified sampling."
         elif imbalance_ratio < 10:
             balance_status = "IMBALANCED"
-            recommendation = "⚠️ Significant imbalance. Use SMOTE, class weights, or oversampling."
+            recommendation = "Significant imbalance. Use SMOTE, class weights, or oversampling."
         else:
             balance_status = "HIGHLY_IMBALANCED"
-            recommendation = "⚠️ CRITICAL: Severe class imbalance. Use advanced techniques (ADASYN, focal loss)."
+            recommendation = "CRITICAL: Severe class imbalance. Use advanced techniques (ADASYN, focal loss)."
         
         return {
             'target_column': self.target_column,
@@ -255,7 +249,7 @@ class DatasetEvaluator:
         
         warning = ""
         if detected:
-            warning = "⚠️ PRIVACY WARNING: Sensitive attributes detected. Ensure proper anonymization and compliance with regulations (GDPR, HIPAA, etc.)"
+            warning = "PRIVACY WARNING: Sensitive attributes detected. Ensure proper anonymization and compliance with regulations (GDPR, HIPAA, etc.)"
         
         return {
             'sensitive_columns_detected': detected,
@@ -431,7 +425,7 @@ class DatasetEvaluator:
             }
         
         try:
-            print("  📊 Generating automated profile (this may take a moment)...")
+            print("  Generating automated profile (this may take a moment)...")
             
             profile = ProfileReport(
                 self.df,
@@ -568,7 +562,7 @@ class DatasetEvaluator:
             f"\nDataset: {self.csv_path}",
             f"Evaluation Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "\n" + "=" * 80,
-            "\n📊 BASIC INFORMATION",
+            "\nBASIC INFORMATION",
             "-" * 80,
             f"Rows: {self.report['basic_info']['n_rows']:,}",
             f"Columns: {self.report['basic_info']['n_columns']}",
@@ -576,9 +570,9 @@ class DatasetEvaluator:
             f"Target Column: {self.report['basic_info']['target_column']}",
             f"Memory Usage: {self.report['basic_info']['memory_usage_mb']:.2f} MB",
             "\n" + "=" * 80,
-            f"\n⭐ OVERALL QUALITY SCORE: {self.report['overall_quality_score']['overall_score']:.1f}/100",
+            f"\nOVERALL QUALITY SCORE: {self.report['overall_quality_score']['overall_score']:.1f}/100",
             f"Grade: {self.report['overall_quality_score']['grade']}",
-            f"Ready for ML: {'✅ YES' if self.report['overall_quality_score']['ready_for_ml'] else '❌ NO'}",
+            f"Ready for ML: {'YES' if self.report['overall_quality_score']['ready_for_ml'] else 'NO'}",
         ]
         
         if self.report['overall_quality_score']['deductions']:
@@ -588,21 +582,21 @@ class DatasetEvaluator:
         
         report_lines.extend([
             "\n" + "=" * 80,
-            "\n🔍 KEY FINDINGS",
+            "\nKEY FINDINGS",
             "-" * 80,
         ])
         
         if 'target_column' in self.report['class_balance']:
             cb = self.report['class_balance']
             report_lines.extend([
-                f"\n📊 Class Balance: {cb['balance_status']}",
+                f"\nClass Balance: {cb['balance_status']}",
                 f"  • Imbalance Ratio: {cb['imbalance_ratio']:.2f}",
                 f"  • {cb['recommendation']}"
             ])
         
         md = self.report['missing_data']
         report_lines.extend([
-            f"\n❓ Missing Data: {md['missing_percentage']:.2f}%",
+            f"\nMissing Data: {md['missing_percentage']:.2f}%",
             f"  • {md['recommendation']}"
         ])
         
@@ -621,7 +615,6 @@ class DatasetEvaluator:
         return report_text
     
     def save_report_json(self, output_path: str):
-        """Save report as JSON for programmatic access."""
         if not self.report:
             self.evaluate_all()
         
@@ -658,6 +651,6 @@ if __name__ == "__main__":
         output_txt="dataset_report.txt"
     )
     
-    print(f"\n✅ Evaluation complete!")
+    print(f"\nEvaluation complete!")
     print(f"Overall Score: {report['overall_quality_score']['overall_score']:.1f}/100")
     print(f"Grade: {report['overall_quality_score']['grade']}")

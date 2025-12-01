@@ -22,27 +22,35 @@ class ToolManager:
         return json.dumps(self.tool_descriptions)
     
     def parse_function_call(self, model_output: str):
+        # Try with <functioncall> tags first
         tool_match = re.search(r"<functioncall>\s*({.*?})\s*(?:\n|$)", model_output, re.DOTALL)
         
-        if not tool_match:
-            return None, None
+        if tool_match:
+            json_str = tool_match.group(1).strip()
+        else:
+            # Try parsing as plain JSON
+            json_match = re.search(r'{\s*"name"\s*:\s*"[^"]+"\s*,\s*"(?:parameters|arguments)"\s*:\s*{[^}]*}\s*}', model_output, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+            else:
+                return None, None
         
         try:
-            json_str = tool_match.group(1).strip()
-            print(f"DEBUG - Extracted JSON: {json_str}")
+            print(f"DEBUG - Extracted JSON: {json_str[:200]}...")
             
-            tool_json = ast.literal_eval(json_str)
+            tool_json = json.loads(json_str)
             tool_name = tool_json["name"]
             
-            args = tool_json["arguments"]
+            # Handle both 'parameters' and 'arguments' keys
+            args = tool_json.get("arguments") or tool_json.get("parameters", {})
             if isinstance(args, str):
                 args = json.loads(args)
             
             return tool_name, args
             
-        except (json.JSONDecodeError, ValueError, SyntaxError) as e:
+        except (json.JSONDecodeError, ValueError) as e:
             print(f"DEBUG - Parsing error: {e}")
-            print(f"DEBUG - Raw match: {tool_match.group(1)}")
+            print(f"DEBUG - Raw JSON string: {json_str}")
             raise ValueError(f"Error parsing function call: {e}")
     
     def execute_tool(self, tool_name: str, args: dict):

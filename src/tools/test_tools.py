@@ -8,7 +8,6 @@ class TestTools(ToolManager):
     def __init__(self):
         super().__init__()
         
-        # Create tools
         self.tool_current_temp = Tool(
             name="current_temp",
             function=self.current_temp,
@@ -40,7 +39,6 @@ class TestTools(ToolManager):
 
     @staticmethod
     def current_temp(city: str) -> dict:
-        # 1) Geocode city to lat/lon
         q = urllib.parse.quote_plus(city.strip())
         geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={q}&count=1"
 
@@ -53,7 +51,6 @@ class TestTools(ToolManager):
         loc = g["results"][0]
         lat, lon = loc["latitude"], loc["longitude"]
 
-        # 2) Get current temperature at that location
         wx_url = (f"https://api.open-meteo.com/v1/forecast"
                 f"?latitude={lat}&longitude={lon}"
                 f"&current=temperature_2m&timezone=auto")

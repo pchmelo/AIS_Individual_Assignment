@@ -185,6 +185,10 @@ outputs/
 results/
 *.log
 
+# Reports (keep directory, ignore contents)
+reports/*
+!reports/.gitkeep
+
 # Temporary files
 tmp/
 temp/
