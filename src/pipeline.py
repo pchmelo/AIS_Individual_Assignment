@@ -4,18 +4,24 @@ from typing import Dict, Any
 from agents.function_caller_agent import FunctionCallerAgent
 from agents.data_analyst_agent import DataAnalystAgent
 from agents.conversational_agent import ConversationalAgent
-from agents.model_client import LocalModelClient, OpenRouterClient
+from agents.model_client import LocalModelClient, OpenRouterClient, GeminiClient
 from tools.fairness_tools import FairnessTools
+import re
 
 class DatasetEvaluationPipeline:
-    def __init__(self, use_api_model: bool = False):
+    def __init__(self, use_api_model: int = 0):
         self.fairness_tools = FairnessTools()
         
-        if use_api_model:
+        if use_api_model == 1:
             self.model_client = OpenRouterClient(
                 model="x-ai/grok-4.1-fast:free",
             )
             print("Model: Grok (API)")
+        elif use_api_model == 2:
+            self.model_client = GeminiClient(
+                model="gemini-2.5-flash-lite"
+            )
+            print("Model: Google Gemini (API)")
         else:
             self.model_client = LocalModelClient("ibm-granite/granite-3b-code-instruct")
             print("Model: IBM Granite (Local)")
@@ -187,7 +193,6 @@ class DatasetEvaluationPipeline:
         }
     
     def _create_simplified_column_summary(self, columns_data: list) -> str:
-        """Create a simple table format for easier analysis"""
         summary = "COLUMN SUMMARY TABLE:\n"
         summary += "="*100 + "\n"
         summary += f"{'Column':<25} {'Type':<10} {'Unique':<8} {'Sample Values / Top Categories':<50}\n"
@@ -199,11 +204,9 @@ class DatasetEvaluationPipeline:
             unique = col['unique_values']
             
             if 'top_values' in col:
-                # Show top categories with percentages
                 top_items = list(col['top_values'].items())[:3]
                 values_str = ", ".join([f"{k}({v}%)" for k, v in top_items])
             else:
-                # Show sample values for numeric
                 values_str = str(col['sample_values'][:5])
             
             summary += f"{name:<25} {dtype:<10} {unique:<8} {values_str:<50}\n"
@@ -215,45 +218,42 @@ class DatasetEvaluationPipeline:
         columns_result = self.fairness_tools.detect_sensitive_attributes(dataset_name)
         print(f"Tool result: {len(json.dumps(columns_result))} chars")
         
-        # Create simplified summary
         simplified_summary = self._create_simplified_column_summary(columns_result.get('columns', []))
         print(f"\nSimplified summary:\n{simplified_summary}")
         
         print("\nStep 2: Agent identifying which columns are sensitive...")
         analysis_prompt = f"""Analyze this dataset and identify ALL SENSITIVE/PROTECTED attribute columns.
 
-KEY SENSITIVE ATTRIBUTES TO LOOK FOR:
-- Demographics: Age, Race, Ethnicity, Sex/Gender
-- Personal: Religion, Marital-status, Relationship
-- Socioeconomic: Income, Education, Occupation
-- Geographic: Native-country, Nationality
+                                KEY SENSITIVE ATTRIBUTES TO LOOK FOR:
+                                - Demographics: Age, Race, Ethnicity, Sex/Gender
+                                - Personal: Religion, Marital-status, Relationship
+                                - Socioeconomic: Income, Education, Occupation
+                                - Geographic: Native-country, Nationality
 
-{simplified_summary}
+                                {simplified_summary}
 
-IMPORTANT: Look at BOTH column names AND their values/distributions:
-- Race column with values like White, Black, Asian → SENSITIVE
-- Sex column with Male/Female → SENSITIVE  
-- Native-country with country names → SENSITIVE
-- Age with numeric ages → SENSITIVE
-- Education levels → SENSITIVE
-- Marital-status → SENSITIVE
-- Income/salary → SENSITIVE
+                                IMPORTANT: Look at BOTH column names AND their values/distributions:
+                                - Race column with values like White, Black, Asian → SENSITIVE
+                                - Sex column with Male/Female → SENSITIVE  
+                                - Native-country with country names → SENSITIVE
+                                - Age with numeric ages → SENSITIVE
+                                - Education levels → SENSITIVE
+                                - Marital-status → SENSITIVE
+                                - Income/salary → SENSITIVE
 
-For EACH sensitive column, output EXACTLY this format:
-Column: [exact_column_name] | Reason: [why_sensitive] | Values: [key_values]
+                                For EACH sensitive column, output EXACTLY this format:
+                                Column: [exact_column_name] | Reason: [why_sensitive] | Values: [key_values]
 
-List ALL sensitive columns - don't miss Race, Sex, Native-country if present!"""
+                                List ALL sensitive columns - don't miss Race, Sex, Native-country if present.
+                            """
         
-        # Use higher token limit for comprehensive analysis
         sensitive_list = self.recommendation_agent.run(analysis_prompt, max_tokens=1536)
         print(f"Sensitive columns identified ({len(sensitive_list)} chars)")
         print(f"Full response: {sensitive_list}")
         
-        # Extract column names from the agent's response
-        import re
         column_pattern = r'Column:\s*([\w-]+)'
         identified_columns = re.findall(column_pattern, sensitive_list)
-        # Deduplicate while preserving order
+        
         identified_columns = list(dict.fromkeys(identified_columns))
         print(f"Extracted sensitive column names: {identified_columns}")
         
@@ -265,7 +265,6 @@ List ALL sensitive columns - don't miss Race, Sex, Native-country if present!"""
         }
     
     def _stage_5_imbalance_analysis(self, dataset_name: str) -> Dict[str, Any]:
-        # Get sensitive columns from Stage 4
         sensitive_cols = self.evaluation_results["stages"]["4_sensitive"].get("sensitive_columns", [])
         print(f"Analyzing imbalance for {len(sensitive_cols)} sensitive columns: {sensitive_cols}")
         
@@ -273,7 +272,6 @@ List ALL sensitive columns - don't miss Race, Sex, Native-country if present!"""
         tool_result = self.fairness_tools.check_class_imbalance(dataset_name)
         print(f"Tool result: {json.dumps(tool_result, indent=2)}")
         
-        # Filter results to only sensitive columns
         if tool_result.get("status") == "success" and sensitive_cols:
             filtered_details = [
                 detail for detail in tool_result.get("details", [])
@@ -286,18 +284,19 @@ List ALL sensitive columns - don't miss Race, Sex, Native-country if present!"""
         print("\nAgent analyzing imbalance in SENSITIVE columns only...")
         analysis_prompt = f"""Analyze class imbalance in SENSITIVE/PROTECTED attributes ONLY.
 
-SENSITIVE COLUMNS IDENTIFIED: {', '.join(sensitive_cols)}
+                                SENSITIVE COLUMNS IDENTIFIED: {', '.join(sensitive_cols)}
 
-IMBALANCE DATA (for sensitive columns only):
-{json.dumps(tool_result, indent=2)}
+                                IMBALANCE DATA (for sensitive columns only):
+                                {json.dumps(tool_result, indent=2)}
 
-Provide:
-1. Summary of imbalance severity for each sensitive column
-2. Fairness risks (which groups are underrepresented?)
-3. Impact on model bias
-4. Specific mitigation recommendations
+                                Provide:
+                                1. Summary of imbalance severity for each sensitive column
+                                2. Fairness risks (which groups are underrepresented?)
+                                3. Impact on model bias
+                                4. Specific mitigation recommendations
 
-Focus ONLY on the sensitive columns listed above."""
+                                Focus ONLY on the sensitive columns listed above.
+                            """
         
         analysis = self.quality_agent.run(analysis_prompt)
         print(f"Imbalance analysis complete: {len(str(analysis))} chars")
@@ -382,19 +381,15 @@ Focus ONLY on the sensitive columns listed above."""
             report.append(f"\n\n{title}")
             report.append("-" * 80)
             
-            # Format stage data with both JSON and readable text
             if isinstance(stage_data, dict):
-                # Show JSON structure
                 report.append("\n[STRUCTURED DATA]")
                 report.append(json.dumps(stage_data, indent=2))
                 
-                # Show formatted agent analysis if present
                 if "agent_analysis" in stage_data:
                     report.append("\n\n[AGENT ANALYSIS]")
                     report.append("-" * 80)
                     report.append(stage_data["agent_analysis"])
                 
-                # Show formatted recommendations
                 if "recommendations" in stage_data:
                     report.append("\n\n[RECOMMENDATIONS]")
                     report.append("-" * 80)

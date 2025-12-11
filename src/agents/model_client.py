@@ -6,6 +6,12 @@ import requests
 import os
 from dotenv import load_dotenv
 
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
 load_dotenv()
 
 class BaseModelClient(ABC):    
@@ -119,3 +125,62 @@ class OpenRouterClient(BaseModelClient):
     
     def supports_function_calling(self) -> bool:
         return self.model_info.get("function_calling", False)
+
+
+class GeminiClient(BaseModelClient):    
+    def __init__(self, model: str = "gemini-3-pro-preview"):
+        if not GEMINI_AVAILABLE:
+            raise ImportError("google-generativeai package not installed. Install with: pip install google-generativeai")
+        
+        self.model_name = model
+        self.api_key = os.getenv("GOOGLE_API_KEY")
+        
+        if not self.api_key:
+            raise ValueError("Google API key not found. Set GOOGLE_API_KEY environment variable.")
+        
+        genai.configure(api_key=self.api_key)
+        self.model = genai.GenerativeModel(model)
+        
+        print(f"Gemini client initialized: {model}")
+    
+    def generate(self, messages: List[Dict[str, str]], temperature: float = 0.2, max_tokens: int = 2048) -> str:        
+        chat_history = []
+        system_instruction = None
+        
+        for msg in messages:
+            role = msg["role"]
+            content = msg["content"]
+            
+            if role == "system":
+                # Gemini uses system_instruction separately
+                system_instruction = content
+            elif role == "user":
+                chat_history.append({"role": "user", "parts": [content]})
+            elif role == "assistant":
+                chat_history.append({"role": "model", "parts": [content]})
+        
+        generation_config = genai.types.GenerationConfig(
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+        )
+        
+        try:
+            if system_instruction:
+                model_with_system = genai.GenerativeModel(
+                    self.model_name,
+                    system_instruction=system_instruction
+                )
+                chat = model_with_system.start_chat(history=chat_history[:-1] if chat_history else [])
+            else:
+                chat = self.model.start_chat(history=chat_history[:-1] if chat_history else [])
+            
+            last_message = chat_history[-1]["parts"][0] if chat_history else ""
+            response = chat.send_message(last_message, generation_config=generation_config)
+            
+            return response.text
+        
+        except Exception as e:
+            raise Exception(f"Gemini API Error: {str(e)}")
+    
+    def supports_function_calling(self) -> bool:
+        return True

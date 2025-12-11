@@ -4,15 +4,22 @@ def main():
     print("Dataset Quality and Fairness Evaluation System")
     print("="*80)
     
-    use_api = 2     # 1=IBM Granite, 2=Grok (API)
+    # Model selection: 0=IBM Granite (Local), 1=Grok (API), 2=Gemini (API)
+    use_api = 2
     user_prompt = "audit adult-all dataset"
     
     if not user_prompt:
         print("No input provided. Exiting.")
         return
     
+    model_names = {
+        0: "IBM Granite (Local)",
+        1: "Grok (API)",
+        2: "Google Gemini (API)"
+    }
+    
     print(f"\nInitializing pipeline...")
-    print(f"Model: {'Grok (API)' if use_api else 'IBM Granite (Local)'}")
+    print(f"Model: {model_names.get(use_api, 'Unknown')}")
     print(f"User prompt: {user_prompt}")
     
     try:
