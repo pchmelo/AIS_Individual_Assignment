@@ -72,7 +72,6 @@ class DatasetEvaluationPipeline:
         
         for word in words:
             if ".csv" in word:
-                # Strip quotes and clean the word
                 clean_word = word.strip("'\"").replace(".csv", "")
                 return clean_word
         
@@ -90,7 +89,6 @@ class DatasetEvaluationPipeline:
         return words[0].strip("'\"") if words else "dataset"
     
     def _extract_target_column(self, user_prompt: str) -> str:
-        """Extract target column name from user prompt"""
         prompt_lower = user_prompt.lower()
         
         # Look for "target=" or "target:" patterns
@@ -353,7 +351,7 @@ class DatasetEvaluationPipeline:
             "analyzed_columns": sensitive_cols
         }
     
-    def _stage_4_5_target_fairness_analysis(self, dataset_name: str, target_column: str) -> Dict[str, Any]:
+    def _stage_4_5_target_fairness_analysis(self, dataset_name: str, target_column: str, selected_pairs: list = None) -> Dict[str, Any]:
         """Analyze fairness metrics for target variable across sensitive attributes"""
         sensitive_cols = self.evaluation_results["stages"]["3_sensitive"].get("sensitive_columns", [])
         
@@ -367,12 +365,17 @@ class DatasetEvaluationPipeline:
         print(f"Analyzing target '{target_column}' fairness across {len(sensitive_cols)} sensitive columns")
         print(f"Sensitive columns: {sensitive_cols}")
         
+        # If selected_pairs is provided, only analyze those combinations
+        if selected_pairs:
+            print(f"User selected {len(selected_pairs)} combinations to analyze: {selected_pairs}")
+        
         print("Tool: analyze_target_fairness")
         tool_result = self.fairness_tools.analyze_target_fairness(
             dataset_name=dataset_name,
             target_column=target_column,
             sensitive_columns=sensitive_cols,
-            output_dir=self.images_dir
+            output_dir=self.images_dir,
+            selected_pairs=selected_pairs  # Pass selected pairs to tool
         )
         
         if tool_result.get("status") == "success":

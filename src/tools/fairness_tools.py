@@ -458,7 +458,7 @@ class FairnessTools(ToolManager):
         except Exception as e:
             return {"status": "error", "message": str(e)}
     
-    def analyze_target_fairness(self, dataset_name: str, target_column: str, sensitive_columns: list, output_dir: str) -> dict:
+    def analyze_target_fairness(self, dataset_name: str, target_column: str, sensitive_columns: list, output_dir: str, selected_pairs: list = None) -> dict:
         try:
             path = self._resolve_path(dataset_name)
             
@@ -601,12 +601,22 @@ class FairnessTools(ToolManager):
                     }
                 result["target_rates_by_group"][sensitive_col] = group_target_rates
             
-            # 5. Combined sensitive groups analysis - Generate for all pairs
+            # 5. Combined sensitive groups analysis - Generate for selected pairs only
             if len(sensitive_columns) >= 2:
                 from itertools import combinations as iter_combinations
                 
-                # Generate all possible pairs of sensitive columns
-                sensitive_pairs = list(iter_combinations(sensitive_columns, 2))
+                # Use selected pairs if provided, otherwise generate all possible pairs
+                if selected_pairs:
+                    # Filter to ensure both columns exist in the dataframe
+                    sensitive_pairs = [
+                        (col1, col2) for col1, col2 in selected_pairs 
+                        if col1 in df.columns and col2 in df.columns
+                    ]
+                    print(f"Generating combinations for {len(sensitive_pairs)} user-selected pairs")
+                else:
+                    # Generate all possible pairs
+                    sensitive_pairs = list(iter_combinations(sensitive_columns, 2))
+                    print(f"Generating combinations for all {len(sensitive_pairs)} possible pairs")
                 
                 for col1, col2 in sensitive_pairs:
                     combined_col = f"{col1}_{col2}"
@@ -754,8 +764,13 @@ class FairnessTools(ToolManager):
                         
                         plt.tight_layout()
                         
-                        # Safe filename
-                        safe_name = combination.replace('/', '-').replace('\\', '-').replace(' ', '_')
+                        # Safe filename - remove/replace invalid Windows filename characters
+                        # Invalid chars: < > : " / \ | ? *
+                        safe_name = combination.replace('<', 'lt').replace('>', 'gt').replace(':', '-')
+                        safe_name = safe_name.replace('"', '').replace('/', '-').replace('\\', '-')
+                        safe_name = safe_name.replace('|', '-').replace('?', '').replace('*', '')
+                        safe_name = safe_name.replace(' ', '_')
+                        
                         img_path = os.path.join(individual_dir, f"{safe_name}.png")
                         plt.savefig(img_path, bbox_inches='tight', dpi=120, facecolor='white')
                         plt.close()
