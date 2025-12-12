@@ -1,5 +1,3 @@
-
-
 class Tool:
     def __init__(self, name, function, description, parameters):
         self.name = name

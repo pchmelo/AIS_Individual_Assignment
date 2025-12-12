@@ -1,26 +1,18 @@
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 from tools.tool import Tool
 from tools.tool_manager import ToolManager
 import os
+import warnings
+warnings.simplefilter(action='ignore', category=Warning)
 
 class FairnessTools(ToolManager):    
     def __init__(self):
         super().__init__()
         
         self.data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-        
-        self.tool_analyze_fairness = Tool(
-            name="analyze_fairness",
-            function=self.analyze_fairness,
-            description="Comprehensive analysis of dataset for fairness issues, imbalanced data, sensitive attributes, and data quality",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "dataset_name": {"type": "string", "description": "Name of the dataset (e.g., 'adult-all' or 'adult-all.csv')"}
-                },
-                "required": ["dataset_name"]
-            }
-        )
         
         self.tool_check_missing = Tool(
             name="check_missing_data",
@@ -101,14 +93,30 @@ class FairnessTools(ToolManager):
             }
         )
         
+        self.tool_fairness_analysis = Tool(
+            name="analyze_target_fairness",
+            function=self.analyze_target_fairness,
+            description="Analyze fairness metrics for target variable across sensitive attributes. Generates visualizations and statistical analysis.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "dataset_name": {"type": "string", "description": "Name of the dataset"},
+                    "target_column": {"type": "string", "description": "Name of the target column"},
+                    "sensitive_columns": {"type": "array", "items": {"type": "string"}, "description": "List of sensitive attribute column names"},
+                    "output_dir": {"type": "string", "description": "Directory to save visualizations"}
+                },
+                "required": ["dataset_name", "target_column", "sensitive_columns", "output_dir"]
+            }
+        )
+        
         self.list_of_tools = [
             self.tool_load_dataset,
             self.tool_get_dataset_preview,
-            self.tool_analyze_fairness,
             self.tool_check_missing,
             self.tool_detect_sensitive,
             self.tool_analyze_sensitive,
-            self.tool_check_imbalance
+            self.tool_check_imbalance,
+            self.tool_fairness_analysis
         ]
         self._build_tool_mappings()
     
@@ -235,85 +243,91 @@ class FairnessTools(ToolManager):
             return f"Unable to list datasets: {str(e)}"
     
     
-    def analyze_fairness(self, dataset_name: str):
-        try:
-            path = self._resolve_path(dataset_name)
-            df = pd.read_csv(path)
+    def _detect_type_inconsistencies(self, series):
+        inconsistencies = {
+            "has_inconsistency": False,
+            "numeric_count": 0,
+            "string_count": 0,
+            "mixed_type_values": [],
+            "suspicious_values": []
+        }
+        
+        if series.dtype == 'object':
+            numeric_mask = series.apply(lambda x: isinstance(x, (int, float)) or (isinstance(x, str) and str(x).replace('.','',1).replace('-','',1).isdigit()))
+            string_mask = series.apply(lambda x: isinstance(x, str) and not str(x).replace('.','',1).replace('-','',1).isdigit())
             
-            report = {
-                "status": "success",
-                "dataset": dataset_name,
-                "path": path,
-                "dataset_info": {
-                    "total_rows": len(df),
-                    "total_columns": len(df.columns),
-                    "columns": list(df.columns)
-                },
-                "issues": []
-            }
+            inconsistencies["numeric_count"] = int(numeric_mask.sum())
+            inconsistencies["string_count"] = int(string_mask.sum())
             
-            missing_data = df.isnull().sum()
-            missing_pct = (missing_data / len(df) * 100).round(2)
-            
-            if missing_data.sum() > 0:
-                missing_info = []
-                for col in missing_data[missing_data > 0].index:
-                    severity = "critical" if missing_pct[col] > 50 else "high" if missing_pct[col] > 20 else "medium"
-                    missing_info.append({
-                        "column": col,
-                        "missing_count": int(missing_data[col]),
-                        "missing_percentage": float(missing_pct[col]),
-                        "severity": severity
-                    })
+            if inconsistencies["numeric_count"] > 0 and inconsistencies["string_count"] > 0:
+                inconsistencies["has_inconsistency"] = True
                 
-                report["issues"].append({
-                    "type": "missing_data",
-                    "severity": "critical" if missing_pct.max() > 50 else "high" if missing_pct.max() > 20 else "medium",
-                    "total_missing": int(missing_data.sum()),
-                    "details": missing_info
+                string_samples = series[string_mask].unique()[:5].tolist()
+                inconsistencies["mixed_type_values"] = [str(v) for v in string_samples]
+        
+        return inconsistencies
+    
+    def _detect_suspicious_patterns(self, series):
+        suspicious = []
+        
+        if series.dtype == 'object':
+            single_char = series[series.apply(lambda x: isinstance(x, str) and len(str(x).strip()) == 1)]
+            if len(single_char) > 0:
+                unique_chars = single_char.unique()
+                for char in unique_chars:
+                    count = (series == char).sum()
+                    if count > 1: 
+                        suspicious.append({
+                            "pattern": f"Single character '{char}'",
+                            "count": int(count),
+                            "percentage": float(count / len(series) * 100)
+                        })
+            
+            whitespace = series.apply(lambda x: isinstance(x, str) and len(str(x).strip()) == 0)
+            if whitespace.sum() > 0:
+                suspicious.append({
+                    "pattern": "Whitespace/empty strings",
+                    "count": int(whitespace.sum()),
+                    "percentage": float(whitespace.sum() / len(series) * 100)
                 })
-            
-            # Basic categorical column analysis (no keyword matching)
-            categorical_cols = df.select_dtypes(include=['object', 'category']).columns
-            imbalance_issues = []
-            
-            for col in categorical_cols:
-                value_counts = df[col].value_counts()
-                proportions = (value_counts / len(df) * 100).round(2)
-                
-                if proportions.iloc[0] > 85:
-                    imbalance_issues.append({
-                        "column": col,
-                        "severity": "critical",
-                        "dominant_value": str(proportions.index[0]),
-                        "dominant_pct": float(proportions.iloc[0])
+        
+        elif series.dtype in ['int64', 'float64']:
+            suspicious_numbers = [-999, -99, -9, 999, 9999, 99999, -1]
+            for num in suspicious_numbers:
+                count = (series == num).sum()
+                if count > 0:
+                    suspicious.append({
+                        "pattern": f"Suspicious numeric value {num}",
+                        "count": int(count),
+                        "percentage": float(count / len(series) * 100)
                     })
-            
-            if imbalance_issues:
-                report["issues"].append({
-                    "type": "class_imbalance",
-                    "severity": "critical",
-                    "details": imbalance_issues
-                })
-            
-            report["summary"] = {
-                "total_issues": len(report["issues"]),
-                "critical_issues": sum(1 for i in report["issues"] if i["severity"] == "critical"),
-                "categorical_columns": len(categorical_cols),
-                "note": "Sensitive attribute detection is agent-driven, not keyword-based"
-            }
-            
-            return report
-            
-        except FileNotFoundError as e:
-            return {"status": "error", "message": str(e)}
-        except Exception as e:
-            return {"status": "error", "message": f"Error analyzing dataset: {str(e)}"}
+        
+        return suspicious
     
     def check_missing_data(self, dataset_name: str):
         try:
             path = self._resolve_path(dataset_name)
-            df = pd.read_csv(path)
+            
+            na_values = ['?', 'NA', 'N/A', 'n/a', 'na', 'NULL', 'null', 'None', 'none', 
+                        '', ' ', 'NaN', 'nan', '--', '..', 'missing', 'Missing', 
+                        'unknown', 'Unknown', 'UNKNOWN', 'undefined', 'Undefined']
+            
+            df_original = pd.read_csv(path, keep_default_na=False)
+            
+            df = pd.read_csv(path, na_values=na_values, keep_default_na=True)
+            
+            na_values_found = {}
+            for col in df.columns:
+                found_na = set()
+                if df[col].isnull().sum() > 0:
+                    mask = df[col].isnull()
+                    original_values = df_original.loc[mask, col].unique()
+                    found_na.update([str(v) for v in original_values if v != ''])
+                na_values_found[col] = list(found_na)
+            
+            for col in df.columns:
+                if df[col].dtype == 'object':
+                    df[col] = df[col].apply(lambda x: np.nan if isinstance(x, str) and x.strip() == '' else x)
             
             missing_data = df.isnull().sum()
             missing_pct = (missing_data / len(df) * 100).round(2)
@@ -322,16 +336,53 @@ class FairnessTools(ToolManager):
                 "status": "success",
                 "dataset": dataset_name,
                 "total_rows": len(df),
-                "columns_with_missing": int((missing_data > 0).sum()),
+                "total_missing_values": int(missing_data.sum()),
+                "overall_missing_percentage": float((missing_data.sum() / (len(df) * len(df.columns)) * 100)),
+                "columns_with_issues": 0,
                 "details": []
             }
             
-            for col in missing_data[missing_data > 0].index:
-                result["details"].append({
+            for col in df.columns:
+                col_issues = {
                     "column": col,
+                    "data_type": str(df[col].dtype),
                     "missing_count": int(missing_data[col]),
                     "missing_percentage": float(missing_pct[col])
-                })
+                }
+                
+                issues = []
+                
+                inconsistencies = self._detect_type_inconsistencies(df[col].dropna())
+                if inconsistencies["has_inconsistency"]:
+                    col_issues["type_inconsistency"] = {
+                        "detected": True,
+                        "numeric_values": inconsistencies["numeric_count"],
+                        "string_values": inconsistencies["string_count"],
+                        "sample_string_values": inconsistencies["mixed_type_values"]
+                    }
+                    issues.append(f"Mixed types: {inconsistencies['numeric_count']} numeric, {inconsistencies['string_count']} string")
+                
+                suspicious = self._detect_suspicious_patterns(df[col])
+                if suspicious:
+                    col_issues["suspicious_patterns"] = suspicious
+                    for pattern in suspicious:
+                        issues.append(f"{pattern['pattern']}: {pattern['count']} occurrences ({pattern['percentage']:.2f}%)")
+                
+                if col_issues["missing_count"] > 0:
+                    na_found = na_values_found.get(col, [])
+                    if na_found:
+                        issues.append(f"Missing values: {col_issues['missing_count']} ({col_issues['missing_percentage']:.2f}%) - Detected as NA: {na_found}")
+                    else:
+                        issues.append(f"Missing values: {col_issues['missing_count']} ({col_issues['missing_percentage']:.2f}%)")
+                
+                if (col_issues["missing_count"] > 0 or 
+                    inconsistencies["has_inconsistency"] or 
+                    len(suspicious) > 0):
+                    col_issues["detected_issues"] = " | ".join(issues)
+                    if col_issues["missing_count"] > 0 and na_values_found.get(col):
+                        col_issues["na_values_detected"] = na_values_found[col]
+                    result["details"].append(col_issues)
+                    result["columns_with_issues"] += 1
             
             return result
             
@@ -345,8 +396,6 @@ class FairnessTools(ToolManager):
             path = self._resolve_path(dataset_name)
             df = pd.read_csv(path)
             
-            # Return all columns with their characteristics for agent analysis
-            # No keyword matching - let the agent decide what's sensitive
             column_analysis = []
             
             for col in df.columns:
@@ -355,10 +404,9 @@ class FairnessTools(ToolManager):
                     "type": str(df[col].dtype),
                     "unique_values": int(df[col].nunique()),
                     "null_count": int(df[col].isnull().sum()),
-                    "sample_values": df[col].dropna().head(5).tolist()
+                    "sample_values": df[col].dropna().unique()[:10].tolist()
                 }
                 
-                # Add distribution for categorical/low cardinality columns
                 if df[col].dtype == 'object' or df[col].nunique() < 50:
                     value_counts = df[col].value_counts()
                     proportions = (value_counts / len(df) * 100).round(2)
@@ -370,8 +418,7 @@ class FairnessTools(ToolManager):
                 "status": "success",
                 "dataset": dataset_name,
                 "total_columns": len(column_analysis),
-                "columns": column_analysis,
-                "note": "Agent should analyze these columns to identify sensitive attributes based on names, values, and distributions"
+                "columns": column_analysis
             }
             
         except FileNotFoundError as e:
@@ -391,7 +438,6 @@ class FairnessTools(ToolManager):
                 value_counts = df[col].value_counts()
                 proportions = (value_counts / len(df) * 100).round(2)
                 
-                # Use 65% threshold to catch imbalances like Sex (66.85%)
                 if proportions.iloc[0] > 65:
                     imbalances.append({
                         "column": col,
@@ -406,6 +452,334 @@ class FairnessTools(ToolManager):
                 "imbalanced_columns": len(imbalances),
                 "details": imbalances
             }
+            
+        except FileNotFoundError as e:
+            return {"status": "error", "message": str(e)}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    def analyze_target_fairness(self, dataset_name: str, target_column: str, sensitive_columns: list, output_dir: str) -> dict:
+        try:
+            path = self._resolve_path(dataset_name)
+            
+            na_values = ['?', 'NA', 'N/A', 'n/a', 'na', 'NULL', 'null', 'None', 'none', 
+                        '', ' ', 'NaN', 'nan', '--', '..', 'missing', 'Missing', 
+                        'unknown', 'Unknown', 'UNKNOWN', 'undefined', 'Undefined']
+            
+            df = pd.read_csv(path, na_values=na_values, keep_default_na=True)
+            df = df.dropna().reset_index(drop=True)
+            
+            if target_column not in df.columns:
+                return {"status": "error", "message": f"Target column '{target_column}' not found"}
+            
+            for col in sensitive_columns:
+                if col not in df.columns:
+                    return {"status": "error", "message": f"Sensitive column '{col}' not found"}
+            
+            os.makedirs(output_dir, exist_ok=True)
+            
+            result = {
+                "status": "success",
+                "dataset": dataset_name,
+                "target_column": target_column,
+                "sensitive_columns": sensitive_columns,
+                "total_rows": len(df),
+                "target_distribution": {},
+                "group_proportions": {},
+                "target_rates_by_group": {},
+                "combined_analysis": {},
+                "generated_images": []
+            }
+            
+            target_counts = df[target_column].value_counts()
+            target_pct = (target_counts / len(df) * 100).round(2)
+            result["target_distribution"] = {
+                "counts": target_counts.to_dict(),
+                "percentages": target_pct.to_dict()
+            }
+            
+            # Generate target distribution histogram
+            plt.figure(figsize=(10, 6))
+            ax = sns.countplot(data=df, x=target_column)
+            plt.title(f"{target_column} Distribution", fontsize=14, pad=15)
+            plt.xlabel(target_column, fontsize=12)
+            plt.ylabel("Count", fontsize=12)
+            plt.xticks(rotation=45, ha='right')
+            plt.tight_layout()
+            img_path = os.path.join(output_dir, f"target_distribution.png")
+            plt.savefig(img_path, bbox_inches='tight', dpi=100)
+            plt.close()
+            result["generated_images"].append(img_path)
+            
+            # 2. Group proportions for each sensitive attribute
+            for sensitive_col in sensitive_columns:
+                group_counts = df[sensitive_col].value_counts()
+                group_pct = (group_counts / len(df) * 100).round(2)
+                result["group_proportions"][sensitive_col] = {
+                    "counts": group_counts.to_dict(),
+                    "percentages": group_pct.to_dict()
+                }
+            
+            # Generate multiple histograms for sensitive attributes
+            n_cols = len(sensitive_columns)
+            fig, axes = plt.subplots(1, n_cols, figsize=(10*n_cols, 6))
+            if n_cols == 1:
+                axes = [axes]
+            
+            for idx, sensitive_col in enumerate(sensitive_columns):
+                # Count unique values to adjust figure size
+                n_unique = df[sensitive_col].nunique()
+                
+                sns.countplot(data=df, x=sensitive_col, ax=axes[idx])
+                axes[idx].set_title(f"{sensitive_col} Distribution", fontsize=12, pad=15)
+                axes[idx].set_xlabel(sensitive_col, fontsize=10)
+                axes[idx].set_ylabel("Count", fontsize=10)
+                
+                # Rotate labels if many categories
+                if n_unique > 5:
+                    axes[idx].tick_params(axis='x', rotation=90)
+                    for label in axes[idx].get_xticklabels():
+                        label.set_rotation(90)
+                        label.set_ha('center')
+                else:
+                    axes[idx].tick_params(axis='x', rotation=45)
+                    for label in axes[idx].get_xticklabels():
+                        label.set_rotation(45)
+                        label.set_ha('right')
+            
+            plt.tight_layout()
+            img_path = os.path.join(output_dir, f"sensitive_distributions.png")
+            plt.savefig(img_path, bbox_inches='tight', dpi=100)
+            plt.close()
+            result["generated_images"].append(img_path)
+            
+            # 3. Target distribution by sensitive groups
+            fig, axes = plt.subplots(1, n_cols, figsize=(10*n_cols, 6))
+            if n_cols == 1:
+                axes = [axes]
+            
+            for idx, sensitive_col in enumerate(sensitive_columns):
+                n_unique = df[sensitive_col].nunique()
+                
+                sns.countplot(data=df, x=sensitive_col, hue=target_column, ax=axes[idx])
+                axes[idx].set_title(f"{target_column} by {sensitive_col}", fontsize=12, pad=15)
+                axes[idx].set_xlabel(sensitive_col, fontsize=10)
+                axes[idx].set_ylabel("Count", fontsize=10)
+                
+                # Rotate labels if many categories
+                if n_unique > 5:
+                    axes[idx].tick_params(axis='x', rotation=90)
+                    for label in axes[idx].get_xticklabels():
+                        label.set_rotation(90)
+                        label.set_ha('center')
+                else:
+                    axes[idx].tick_params(axis='x', rotation=45)
+                    for label in axes[idx].get_xticklabels():
+                        label.set_rotation(45)
+                        label.set_ha('right')
+                
+                # Position legend outside plot area
+                axes[idx].legend(title=target_column, bbox_to_anchor=(1.05, 1), loc='upper left')
+            
+            plt.tight_layout()
+            img_path = os.path.join(output_dir, f"target_by_sensitive.png")
+            plt.savefig(img_path, bbox_inches='tight', dpi=100)
+            plt.close()
+            result["generated_images"].append(img_path)
+            
+            # 4. Target rates by group
+            for sensitive_col in sensitive_columns:
+                group_target_rates = {}
+                for group_value in df[sensitive_col].unique():
+                    group_df = df[df[sensitive_col] == group_value]
+                    target_dist = group_df[target_column].value_counts()
+                    target_pct = (target_dist / len(group_df) * 100).round(2)
+                    group_target_rates[str(group_value)] = {
+                        "total_count": len(group_df),
+                        "target_distribution": target_dist.to_dict(),
+                        "target_percentages": target_pct.to_dict()
+                    }
+                result["target_rates_by_group"][sensitive_col] = group_target_rates
+            
+            # 5. Combined sensitive groups analysis - Generate for all pairs
+            if len(sensitive_columns) >= 2:
+                from itertools import combinations as iter_combinations
+                
+                # Generate all possible pairs of sensitive columns
+                sensitive_pairs = list(iter_combinations(sensitive_columns, 2))
+                
+                for col1, col2 in sensitive_pairs:
+                    combined_col = f"{col1}_{col2}"
+                    df[combined_col] = df[col1].astype(str) + "_" + df[col2].astype(str)
+                    
+                    combined_counts = df[combined_col].value_counts()
+                    combined_pct = (combined_counts / len(df) * 100).round(2)
+                    
+                    result["combined_analysis"][combined_col] = {
+                        "counts": combined_counts.to_dict(),
+                        "percentages": combined_pct.to_dict()
+                    }
+                    
+                    # Create subdirectory for this combination
+                    combined_dir = os.path.join(output_dir, f"{col1}_{col2}_combinations")
+                    os.makedirs(combined_dir, exist_ok=True)
+                    
+                    # Group combinations by count ranges for better visualization
+                    sorted_counts = combined_counts.sort_values(ascending=False)
+                    max_count = sorted_counts.iloc[0]
+                    
+                    # Define scale groups (relative to max)
+                    scale_groups = {
+                        'high': sorted_counts[sorted_counts >= max_count * 0.1],  # >= 10% of max
+                        'medium': sorted_counts[(sorted_counts >= max_count * 0.01) & (sorted_counts < max_count * 0.1)],  # 1-10% of max
+                        'low': sorted_counts[sorted_counts < max_count * 0.01]  # < 1% of max
+                    }
+                    
+                    # Filter out empty groups
+                    scale_groups = {k: v for k, v in scale_groups.items() if len(v) > 0}
+                    
+                    # Create separate plots for each scale group
+                    for scale_name, group_data in scale_groups.items():
+                        if len(group_data) == 0:
+                            continue
+                        
+                        # Filter dataframe to only include categories in this scale group
+                        df_filtered = df[df[combined_col].isin(group_data.index)]
+                        
+                        if len(df_filtered) == 0:
+                            continue
+                        
+                        # Calculate figure width based on number of categories
+                        n_categories = len(group_data)
+                        fig_width = max(16, min(n_categories * 0.6, 24))
+                        
+                        # Create plot
+                        fig, ax = plt.subplots(figsize=(fig_width, 10))
+                        
+                        # Order categories by count
+                        order = group_data.index.tolist()
+                        
+                        sns.countplot(data=df_filtered, x=combined_col, hue=target_column, order=order, ax=ax)
+                        
+                        # Set detailed title
+                        count_range = f"{int(group_data.min())}-{int(group_data.max())}"
+                        title = f"Target: {target_column}\n"
+                        title += f"Analyzed by: {col1} & {col2}\n"
+                        title += f"Scale: {scale_name.upper()} (Count range: {count_range})"
+                        ax.set_title(title, fontsize=16, pad=25, fontweight='bold')
+                        
+                        ax.set_xlabel(f"{col1} & {col2} Combinations", 
+                                     fontsize=13, fontweight='bold', labelpad=10)
+                        ax.set_ylabel("Count", fontsize=13, fontweight='bold')
+                        
+                        # Clear x-axis labels and use them as individual labels
+                        ax.set_xticklabels([])
+                        ax.set_xlabel("")
+                        
+                        # Add individual bar group labels with category name
+                        positions = range(len(order))
+                        for pos, category in zip(positions, order):
+                            # Split category for better readability
+                            parts = category.split('_')
+                            label_text = f"{parts[0]}\n{parts[1]}" if len(parts) == 2 else category
+                            ax.text(pos, -max(ax.get_ylim()) * 0.15, label_text, 
+                                   ha='center', va='top', fontsize=9, fontweight='bold')
+                        
+                        # Add value labels on bars
+                        for container in ax.containers:
+                            ax.bar_label(container, fontsize=8, padding=3, fontweight='bold')
+                        
+                        # Position legend
+                        ax.legend(title=f"{target_column} Values", bbox_to_anchor=(1.02, 1), 
+                                 loc='upper left', fontsize=11, title_fontsize=12, frameon=True, shadow=True)
+                        
+                        # Add grid
+                        ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.7)
+                        ax.set_axisbelow(True)
+                        
+                        # Adjust layout to accommodate labels
+                        plt.subplots_adjust(bottom=0.15)
+                        plt.tight_layout()
+                        
+                        img_path = os.path.join(combined_dir, f"{scale_name}_scale.png")
+                        plt.savefig(img_path, bbox_inches='tight', dpi=150, facecolor='white')
+                        plt.close()
+                        result["generated_images"].append(img_path)
+                    
+                    # Additionally, create individual graphs for each combination
+                    individual_dir = os.path.join(combined_dir, "individual_combinations")
+                    os.makedirs(individual_dir, exist_ok=True)
+                    
+                    # Create a graph for each combination (limit to top 50 to avoid too many files)
+                    top_combinations = sorted_counts.head(50)
+                    
+                    for combination in top_combinations.index:
+                        combo_df = df[df[combined_col] == combination]
+                        
+                        if len(combo_df) == 0:
+                            continue
+                        
+                        # Create individual plot
+                        fig, ax = plt.subplots(figsize=(10, 7))
+                        
+                        target_dist = combo_df[target_column].value_counts()
+                        colors = sns.color_palette("Set2", len(target_dist))
+                        
+                        bars = ax.bar(range(len(target_dist)), target_dist.values, color=colors)
+                        ax.set_xticks(range(len(target_dist)))
+                        ax.set_xticklabels(target_dist.index, fontsize=12, fontweight='bold')
+                        
+                        # Clear title showing what's being analyzed
+                        parts = combination.split('_')
+                        title = f"Target Distribution: {target_column}\n"
+                        title += f"{col1}: {parts[0]}\n"
+                        title += f"{col2}: {parts[1] if len(parts) > 1 else 'N/A'}\n"
+                        title += f"Total Count: {len(combo_df)}"
+                        ax.set_title(title, fontsize=14, pad=20, fontweight='bold')
+                        
+                        ax.set_xlabel(f"{target_column} Values", fontsize=12, fontweight='bold')
+                        ax.set_ylabel("Count", fontsize=12, fontweight='bold')
+                        
+                        # Add value labels on bars
+                        for bar in bars:
+                            height = bar.get_height()
+                            percentage = (height / len(combo_df) * 100)
+                            ax.text(bar.get_x() + bar.get_width()/2., height,
+                                   f'{int(height)}\n({percentage:.1f}%)',
+                                   ha='center', va='bottom', fontsize=10, fontweight='bold')
+                        
+                        # Add grid
+                        ax.grid(axis='y', alpha=0.3, linestyle='--')
+                        ax.set_axisbelow(True)
+                        
+                        plt.tight_layout()
+                        
+                        # Safe filename
+                        safe_name = combination.replace('/', '-').replace('\\', '-').replace(' ', '_')
+                        img_path = os.path.join(individual_dir, f"{safe_name}.png")
+                        plt.savefig(img_path, bbox_inches='tight', dpi=120, facecolor='white')
+                        plt.close()
+                        result["generated_images"].append(img_path)
+                    
+                    # Target rates for combined groups of this pair
+                    combined_target_rates = {}
+                    for group_value in df[combined_col].unique():
+                        group_df = df[df[combined_col] == group_value]
+                        target_dist = group_df[target_column].value_counts()
+                        target_pct = (target_dist / len(group_df) * 100).round(2)
+                        combined_target_rates[str(group_value)] = {
+                            "total_count": len(group_df),
+                            "target_distribution": target_dist.to_dict(),
+                            "target_percentages": target_pct.to_dict()
+                        }
+                    result["combined_analysis"][combined_col]["target_rates"] = combined_target_rates
+                    result["combined_analysis"][combined_col]["scale_groups"] = {
+                        k: {"categories": v.index.tolist(), "count_range": f"{int(v.min())}-{int(v.max())}"} 
+                        for k, v in scale_groups.items()
+                    }
+                    result["combined_analysis"][combined_col]["output_directory"] = combined_dir
+            
+            return result
             
         except FileNotFoundError as e:
             return {"status": "error", "message": str(e)}

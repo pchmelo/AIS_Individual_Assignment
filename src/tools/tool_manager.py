@@ -1,5 +1,4 @@
 import json
-import ast
 import re
 
 class ToolManager:
@@ -22,13 +21,11 @@ class ToolManager:
         return json.dumps(self.tool_descriptions)
     
     def parse_function_call(self, model_output: str):
-        # Try with <functioncall> tags first
         tool_match = re.search(r"<functioncall>\s*({.*?})\s*(?:\n|$)", model_output, re.DOTALL)
         
         if tool_match:
             json_str = tool_match.group(1).strip()
         else:
-            # Try parsing as plain JSON
             json_match = re.search(r'{\s*"name"\s*:\s*"[^"]+"\s*,\s*"(?:parameters|arguments)"\s*:\s*{[^}]*}\s*}', model_output, re.DOTALL)
             if json_match:
                 json_str = json_match.group(0)
@@ -41,7 +38,6 @@ class ToolManager:
             tool_json = json.loads(json_str)
             tool_name = tool_json["name"]
             
-            # Handle both 'parameters' and 'arguments' keys
             args = tool_json.get("arguments") or tool_json.get("parameters", {})
             if isinstance(args, str):
                 args = json.loads(args)
