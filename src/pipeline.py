@@ -175,15 +175,11 @@ class DatasetEvaluationPipeline:
             target_fairness = self._stage_4_5_target_fairness_analysis(dataset_name, target_column)
             self.evaluation_results["stages"]["4_5_target_fairness"] = target_fairness
         
-        print("\nSTAGE 5: Findings Integration")
-        integration = self._stage_5_integrate_findings()
-        self.evaluation_results["stages"]["5_integration"] = integration
-        
-        print("\nSTAGE 6: Recommendations")
+        print("\nSTAGE 5: Recommendations")
         recommendations = self._stage_6_recommendations()
-        self.evaluation_results["stages"]["6_recommendations"] = recommendations
+        self.evaluation_results["stages"]["5_recommendations"] = recommendations
         
-        print("\nSTAGE 7: Report Generation")
+        print("\nSTAGE 6: Report Generation")
         self._stage_7_generate_report()
         
         print("\n" + "="*80)
@@ -352,7 +348,6 @@ class DatasetEvaluationPipeline:
         }
     
     def _stage_4_5_target_fairness_analysis(self, dataset_name: str, target_column: str, selected_pairs: list = None) -> Dict[str, Any]:
-        """Analyze fairness metrics for target variable across sensitive attributes"""
         sensitive_cols = self.evaluation_results["stages"]["3_sensitive"].get("sensitive_columns", [])
         
         if not sensitive_cols:
@@ -414,19 +409,10 @@ class DatasetEvaluationPipeline:
             "analyzed_sensitive_columns": sensitive_cols
         }
     
-    def _stage_5_integrate_findings(self) -> Dict[str, Any]:
-        findings = self._compile_findings()
-        summary = {
-            "missing_issues": "See stage 2",
-            "sensitive_risks": "See stage 3",
-            "class_imbalance": "See stage 4",
-            "severity": "Medium to High"
-        }
-        print(f"Integrated findings: {len(self.evaluation_results['stages'])} stages completed")
-        return summary
-    
     def _stage_6_recommendations(self) -> Dict[str, Any]:
+        print(f"Integrating findings from {len(self.evaluation_results['stages'])} stages completed")
         findings_summary = self._compile_findings()
+        
         prompt = f"""Based on evaluation results for {self.current_dataset}, provide:
         1. Top 3 critical issues
         2. Mitigation strategies (SMOTE, reweighting, etc.)

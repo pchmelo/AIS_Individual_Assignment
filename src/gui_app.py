@@ -1,9 +1,6 @@
 import streamlit as st
 import os
-import json
 import pandas as pd
-from datetime import datetime
-from pathlib import Path
 import sys
 
 # Add src to path for imports
@@ -185,7 +182,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def init_session_state():
-    """Initialize session state variables"""
     if 'mode' not in st.session_state:
         st.session_state.mode = None
     if 'pipeline' not in st.session_state:
@@ -210,21 +206,18 @@ def init_session_state():
         st.session_state.user_prompt = None
 
 def get_available_datasets():
-    """Get list of available datasets from data folder"""
     data_dir = os.path.join(os.path.dirname(__file__), "data")
     if os.path.exists(data_dir):
         return [f for f in os.listdir(data_dir) if f.endswith('.csv')]
     return []
 
 def get_available_reports():
-    """Get list of available report folders"""
     reports_dir = os.path.join(BASE_DIR, "reports")
     if os.path.exists(reports_dir):
         return [d for d in os.listdir(reports_dir) if os.path.isdir(os.path.join(reports_dir, d))]
     return []
 
 def upload_dataset(uploaded_file):
-    """Save uploaded dataset to data folder"""
     data_dir = os.path.join(os.path.dirname(__file__), "data")
     os.makedirs(data_dir, exist_ok=True)
     
@@ -235,7 +228,6 @@ def upload_dataset(uploaded_file):
     return uploaded_file.name
 
 def get_dataset_columns(dataset_name):
-    """Get column names from dataset"""
     try:
         data_dir = os.path.join(os.path.dirname(__file__), "data")
         file_path = os.path.join(data_dir, dataset_name)
@@ -246,7 +238,6 @@ def get_dataset_columns(dataset_name):
         return []
 
 def display_stage_results(stage_name, stage_data):
-    """Display results for a specific stage"""
     stage_titles = {
         "0_loading": "STAGE 0: Dataset Loading",
         "1_objective": "STAGE 1: Objective Inspection",
@@ -299,7 +290,6 @@ def display_stage_results(stage_name, stage_data):
             st.write(stage_data)
 
 def display_quality_results(tool_result):
-    """Display quality analysis results in a structured way"""
     if tool_result.get("status") == "success":
         col1, col2, col3 = st.columns(3)
         
@@ -329,7 +319,6 @@ def display_quality_results(tool_result):
                 st.dataframe(df_issues, use_container_width=True)
 
 def display_sensitive_results(stage_data):
-    """Display sensitive attribute detection results"""
     tool_result = stage_data.get("tool_result", {})
     sensitive_cols = stage_data.get("sensitive_columns", [])
     
@@ -342,7 +331,6 @@ def display_sensitive_results(stage_data):
         st.text(stage_data["simplified_summary"])
 
 def display_imbalance_results(tool_result):
-    """Display imbalance analysis results"""
     if tool_result.get("status") == "success":
         st.metric("Imbalanced Columns", tool_result.get("imbalanced_columns", 0))
         
@@ -362,7 +350,6 @@ def display_imbalance_results(tool_result):
                         st.dataframe(dist_df, width='stretch')
 
 def display_fairness_results(stage_data):
-    """Display target fairness analysis results with images"""
     tool_result = stage_data.get("tool_result", {})
     
     if tool_result.get("status") == "success":
@@ -414,7 +401,6 @@ def display_fairness_results(stage_data):
                             st.image(img_path, width="stretch")
 
 def main_page():
-    """Main landing page"""
     st.markdown("<div class='main-header'>Dataset Quality & Fairness Evaluation System</div>", 
                 unsafe_allow_html=True)
     
@@ -439,7 +425,6 @@ def main_page():
             st.rerun()
 
 def new_evaluation_page():
-    """Page for creating new evaluation"""
     st.markdown("<div class='main-header'>New Evaluation</div>", unsafe_allow_html=True)
     
     # Sidebar configuration
@@ -518,7 +503,6 @@ def new_evaluation_page():
         """, unsafe_allow_html=True)
 
 def initialize_pipeline():
-    """Initialize the pipeline and prepare for step-by-step execution"""
     try:
         # Create user prompt
         prompt = f"Evaluate the dataset '{st.session_state.dataset_name}' for data quality and fairness issues."
@@ -563,7 +547,6 @@ def initialize_pipeline():
         st.exception(e)
 
 def display_pipeline_stepwise():
-    """Display and execute pipeline step by step"""
     results = st.session_state.evaluation_results
     pipeline = st.session_state.pipeline
     
@@ -591,8 +574,7 @@ def display_pipeline_stepwise():
         ("3_sensitive", "Sensitive Attribute Detection"),
         ("4_imbalance", "Imbalance Analysis"),
         ("4_5_target_fairness", "Target Fairness Analysis") if st.session_state.target_column else None,
-        ("5_integration", "Findings Integration"),
-        ("6_recommendations", "Recommendations")
+        ("5_recommendations", "Recommendations")
     ]
     stages = [s for s in stages if s is not None]
     
@@ -616,73 +598,92 @@ def display_pipeline_stepwise():
             
             if len(sensitive_cols) >= 2:
                 st.markdown("### Stage 4.5: Target Fairness Analysis")
-                st.info(f"Detected {len(sensitive_cols)} sensitive attributes: {', '.join(sensitive_cols)}")
+                st.info(f"Detected {len(sensitive_cols)} sensitive attributes: **{', '.join(sensitive_cols)}**")
+                
+                st.markdown("---")
+                st.markdown("**Select Attribute Combinations to Analyze:**")
+                st.caption("Choose which pairs of sensitive attributes you want to analyze together. Only selected combinations will generate visualizations.")
                 
                 # Generate all possible pairs
                 from itertools import combinations
                 possible_pairs = list(combinations(sensitive_cols, 2))
-                pair_options = [f"{a} + {b}" for a, b in possible_pairs]
                 
-                st.markdown("**Select which attribute combinations to analyze:**")
-                st.caption("Choose the combinations you want to visualize. Only selected combinations will generate charts.")
+                # Initialize session state for checkboxes
+                if 'combo_selections' not in st.session_state:
+                    st.session_state.combo_selections = {}
                 
-                # Initialize session state for selected combinations if not exists
-                if 'selected_combinations' not in st.session_state:
-                    st.session_state.selected_combinations = []
-                
-                selected_display = st.multiselect(
-                    "Attribute Combinations:",
-                    options=pair_options,
-                    default=st.session_state.selected_combinations,
-                    help="Select which pairs of sensitive attributes to analyze together"
-                )
-                
-                # Update session state
-                st.session_state.selected_combinations = selected_display
-                
-                # Convert display format back to tuple format
+                # Display checkboxes for each combination
                 selected_pairs = []
-                for display in selected_display:
-                    parts = display.split(' + ')
-                    if len(parts) == 2:
-                        selected_pairs.append((parts[0], parts[1]))
                 
-                # Show confirmation button
-                col1, col2 = st.columns([3, 1])
+                # Create columns for better layout (2 columns)
+                num_cols = 2
+                cols = st.columns(num_cols)
+                
+                for idx, (attr1, attr2) in enumerate(possible_pairs):
+                    col_idx = idx % num_cols
+                    combo_key = f"{attr1}_{attr2}"
+                    
+                    # Initialize checkbox state if not exists
+                    if combo_key not in st.session_state.combo_selections:
+                        st.session_state.combo_selections[combo_key] = False
+                    
+                    with cols[col_idx]:
+                        is_selected = st.checkbox(
+                            f"{attr1} + {attr2}",
+                            value=st.session_state.combo_selections[combo_key],
+                            key=f"checkbox_{combo_key}"
+                        )
+                        
+                        # Update state and collect selected pairs
+                        st.session_state.combo_selections[combo_key] = is_selected
+                        if is_selected:
+                            selected_pairs.append((attr1, attr2))
+                
+                # Show selection summary and generate button
+                st.markdown("---")
+                
+                if selected_pairs:
+                    st.success(f"**{len(selected_pairs)} combination(s) selected:** {', '.join([f'{a}+{b}' for a, b in selected_pairs])}")
+                else:
+                    st.warning("No combinations selected. Please select at least one combination above.")
+                
+                col1, col2, col3 = st.columns([2, 1, 1])
                 with col2:
-                    if st.button("Generate Analysis", type="primary", key="gen_stage_4_5"):
-                        if not selected_pairs:
-                            st.warning("Please select at least one combination to analyze")
-                        else:
-                            # Store selected pairs in session state for execution
-                            st.session_state.stage_4_5_pairs = selected_pairs
-                            
-                            # Execute stage with selected pairs
-                            with st.spinner(f"Running {stage_name}..."):
-                                try:
-                                    # Preserve pipeline directories before syncing
-                                    report_dir = pipeline.report_dir
-                                    images_dir = pipeline.images_dir
-                                    
-                                    pipeline.evaluation_results = results
-                                    
-                                    # Restore directories
-                                    pipeline.report_dir = report_dir
-                                    pipeline.images_dir = images_dir
-                                    
-                                    # Pass selected pairs to the stage
-                                    stage_result = execute_stage_with_pairs(
-                                        pipeline, stage_key, st.session_state.user_prompt,
-                                        results.get('dataset'), results.get('target_column'),
-                                        selected_pairs
-                                    )
-                                    results["stages"][stage_key] = stage_result
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error in {stage_name}: {str(e)}")
-                                    import traceback
-                                    st.code(traceback.format_exc())
-                                    return
+                    if st.button("Clear All", key="clear_combos", use_container_width=True):
+                        st.session_state.combo_selections = {k: False for k in st.session_state.combo_selections.keys()}
+                        st.rerun()
+                
+                with col3:
+                    if st.button("Generate Analysis", type="primary", key="gen_stage_4_5", use_container_width=True, disabled=len(selected_pairs) == 0):
+                        # Execute stage with selected pairs
+                        with st.spinner(f"Running {stage_name} for {len(selected_pairs)} combination(s)..."):
+                            try:
+                                # Preserve pipeline directories before syncing
+                                report_dir = pipeline.report_dir
+                                images_dir = pipeline.images_dir
+                                
+                                pipeline.evaluation_results = results
+                                
+                                # Restore directories
+                                pipeline.report_dir = report_dir
+                                pipeline.images_dir = images_dir
+                                
+                                # Pass selected pairs to the stage
+                                stage_result = execute_stage_with_pairs(
+                                    pipeline, stage_key, st.session_state.user_prompt,
+                                    results.get('dataset'), results.get('target_column'),
+                                    selected_pairs
+                                )
+                                results["stages"][stage_key] = stage_result
+                                
+                                # Clear selections after successful generation
+                                st.session_state.combo_selections = {}
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error in {stage_name}: {str(e)}")
+                                import traceback
+                                st.code(traceback.format_exc())
+                                return
                 
                 return  # Don't show continue button yet
         
@@ -719,10 +720,6 @@ def display_pipeline_stepwise():
             col1, col2 = st.columns([3, 1])
             with col2:
                 if st.button(f"Continue →", key=f"continue_{stage_key}"):
-                    # Clear modal state when continuing to next stage
-                    st.session_state.show_modal = False
-                    st.session_state.modal_image = None
-                    st.session_state.modal_title = None
                     st.session_state.current_step += 1
                     st.rerun()
     
@@ -745,7 +742,6 @@ def display_pipeline_stepwise():
             st.markdown(f"**Report Directory:** `{results['report_directory']}`")
 
 def execute_stage(pipeline, stage_key, user_prompt, dataset_name, target_column):
-    """Execute a single pipeline stage"""
     if stage_key == "0_loading":
         return pipeline._stage_0_load_dataset(dataset_name)
     elif stage_key == "1_objective":
@@ -758,22 +754,18 @@ def execute_stage(pipeline, stage_key, user_prompt, dataset_name, target_column)
         return pipeline._stage_4_imbalance_analysis(dataset_name)
     elif stage_key == "4_5_target_fairness":
         return pipeline._stage_4_5_target_fairness_analysis(dataset_name, target_column)
-    elif stage_key == "5_integration":
-        return pipeline._stage_5_integrate_findings()
-    elif stage_key == "6_recommendations":
+    elif stage_key == "5_recommendations":
         return pipeline._stage_6_recommendations()
     else:
         return {"status": "error", "message": f"Unknown stage: {stage_key}"}
 
 def execute_stage_with_pairs(pipeline, stage_key, user_prompt, dataset_name, target_column, selected_pairs):
-    """Execute Stage 4.5 with user-selected combination pairs"""
     if stage_key == "4_5_target_fairness":
         return pipeline._stage_4_5_target_fairness_analysis(dataset_name, target_column, selected_pairs)
     else:
         return execute_stage(pipeline, stage_key, user_prompt, dataset_name, target_column)
 
 def display_stage_results(stage_key, stage_result):
-    """Display the results of a specific stage"""
     # Extract stage name from key
     stage_names = {
         "0_loading": "Stage 0: Dataset Loading",
@@ -782,8 +774,7 @@ def display_stage_results(stage_key, stage_result):
         "3_sensitive": "Stage 3: Sensitive Attribute Detection",
         "4_imbalance": "Stage 4: Imbalance Analysis",
         "4_5_target_fairness": "Stage 4.5: Target Fairness Analysis",
-        "5_integration": "Stage 5: Findings Integration",
-        "6_recommendations": "Stage 6: Recommendations"
+        "5_recommendations": "Stage 5: Recommendations"
     }
     
     st.markdown(f"### {stage_names.get(stage_key, stage_key)}")
@@ -805,8 +796,8 @@ def display_stage_results(stage_key, stage_result):
             with st.expander("Tool Result"):
                 st.json(tool_result)
     
-    # Special display for Stage 6 (Recommendations)
-    if stage_key == "6_recommendations" and "recommendations" in stage_result:
+    # Special display for Stage 5 (Recommendations)
+    if stage_key == "5_recommendations" and "recommendations" in stage_result:
         with st.expander("Recommendations", expanded=True):
             st.markdown(stage_result["recommendations"])
     
@@ -925,27 +916,29 @@ def display_stage_results(stage_key, stage_result):
                         # This is a main/simple visualization
                         main_images.append(img_path)
                 
-                # Display main/simple visualizations as table with clickable links
+                # Display main/simple visualizations with selectbox
                 if main_images:
                     st.markdown("#### Main Visualizations")
                     
-                    # Display as table
-                    for idx, img_path in enumerate(main_images):
+                    # Create list of image options
+                    main_image_options = {}
+                    for img_path in main_images:
                         if os.path.exists(img_path):
                             filename = os.path.basename(img_path)
                             display_name = filename.replace('.png', '').replace('_', ' ').title()
-                            
-                            col1, col2 = st.columns([3, 1])
-                            with col1:
-                                st.markdown(f"**{display_name}**")
-                            with col2:
-                                if st.button("View", key=f"view_main_{idx}"):
-                                    st.session_state.modal_image = img_path
-                                    st.session_state.modal_title = display_name
-                                    st.session_state.show_modal = True
-                                    st.rerun()
+                            main_image_options[display_name] = img_path
+                    
+                    if main_image_options:
+                        selected_main = st.selectbox(
+                            "Select visualization to view:",
+                            options=["None"] + list(main_image_options.keys()),
+                            key="main_viz_selector"
+                        )
+                        
+                        if selected_main != "None":
+                            st.image(main_image_options[selected_main], caption=selected_main, use_container_width=True)
                 
-                # Display combination visualizations as table
+                # Display combination visualizations with better selection
                 if combination_images:
                     st.markdown("---")
                     st.markdown("#### Combined Sensitive Attribute Analysis")
@@ -954,74 +947,52 @@ def display_stage_results(stage_key, stage_result):
                     total_charts = sum(len(imgs) for imgs in combination_images.values())
                     st.info(f"{len(combination_images)} attribute combinations available ({total_charts} total charts)")
                     
-                    # Let user select which combination pairs to view
-                    selected_combos = st.multiselect(
-                        "Select attribute combinations to visualize:",
-                        options=sorted(combination_images.keys()),
-                        help="Choose which combinations of sensitive attributes you want to analyze (e.g., Age + Race, Sex + Education)",
-                        key="combo_selection"
+                    # Let user select which combination to view
+                    combo_options = sorted(combination_images.keys())
+                    selected_combo = st.selectbox(
+                        "Select attribute combination to analyze:",
+                        options=["None"] + combo_options,
+                        help="Choose which combination of sensitive attributes you want to analyze",
+                        key="combo_selector"
                     )
                     
-                    # Clear modal state if selection changes
-                    if 'previous_combo_selection' not in st.session_state:
-                        st.session_state.previous_combo_selection = []
-                    
-                    if st.session_state.previous_combo_selection != selected_combos:
-                        st.session_state.show_modal = False
-                        st.session_state.modal_image = None
-                        st.session_state.modal_title = None
-                        st.session_state.previous_combo_selection = selected_combos
-                    
-                    if selected_combos:
-                        for combo_name in selected_combos:
-                            st.markdown(f"##### {combo_name}")
-                            combo_imgs = combination_images[combo_name]
+                    if selected_combo != "None":
+                        st.markdown(f"##### {selected_combo}")
+                        combo_imgs = combination_images[selected_combo]
+                        
+                        # Create list of images for this combination
+                        combo_image_options = {}
+                        for img_path in combo_imgs:
+                            if os.path.exists(img_path):
+                                filename = os.path.basename(img_path)
+                                
+                                # Create display name
+                                if 'scale.png' in filename:
+                                    display_name = filename.replace('_scale.png', '').upper() + " Scale"
+                                elif 'individual_combinations' in img_path:
+                                    display_name = filename.replace('.png', '').replace('_', ' - ')
+                                else:
+                                    display_name = filename.replace('.png', '').replace('_', ' ').title()
+                                
+                                combo_image_options[display_name] = img_path
+                        
+                        if combo_image_options:
+                            selected_combo_img = st.selectbox(
+                                f"Select {selected_combo} visualization:",
+                                options=["None"] + list(combo_image_options.keys()),
+                                key=f"combo_img_selector_{selected_combo.replace(' + ', '_')}"
+                            )
                             
-                            # Create table for this combination
-                            for idx, img_path in enumerate(combo_imgs):
-                                if os.path.exists(img_path):
-                                    filename = os.path.basename(img_path)
-                                    
-                                    # Create display name
-                                    if 'scale.png' in filename:
-                                        display_name = filename.replace('_scale.png', '').upper() + " Scale"
-                                    else:
-                                        display_name = filename.replace('.png', '').replace('_', ' ').title()
-                                    
-                                    col1, col2 = st.columns([3, 1])
-                                    with col1:
-                                        st.markdown(f"**{display_name}**")
-                                    with col2:
-                                        img_key = f"combo_{combo_name.replace(' + ', '_')}_{idx}"
-                                        if st.button("View", key=f"view_{img_key}"):
-                                            st.session_state.modal_image = img_path
-                                            st.session_state.modal_title = display_name
-                                            st.session_state.show_modal = True
-                                            st.rerun()
-                            
-                            st.markdown("---")
-                    else:
-                        st.info("Select attribute combinations above to view their visualizations")
+                            if selected_combo_img != "None":
+                                st.image(combo_image_options[selected_combo_img], 
+                                       caption=selected_combo_img, 
+                                       use_container_width=True)
                 else:
                     st.warning("No combination visualizations were generated (requires at least 2 sensitive attributes)")
             
             # Show agent analysis for Stage 4.5
             with st.expander("Agent Analysis", expanded=True):
                 st.markdown(stage_result["agent_analysis"])
-        
-        # Display modal outside the stage_key check - only when explicitly requested
-        if stage_key == "4_5_target_fairness" and st.session_state.get('show_modal', False):
-            if hasattr(st.session_state, 'modal_image') and st.session_state.modal_image:
-                @st.dialog(st.session_state.modal_title, width="large")
-                def show_image_modal():
-                    st.image(st.session_state.modal_image, width="stretch")
-                    if st.button("Close", type="primary"):
-                        st.session_state.modal_image = None
-                        st.session_state.modal_title = None
-                        st.session_state.show_modal = False
-                        st.rerun()
-                
-                show_image_modal()
         
         elif stage_key != "3_sensitive" and stage_key != "4_5_target_fairness":
             # Default display for other stages (not 3 or 4.5)
@@ -1036,7 +1007,6 @@ def display_stage_results(stage_key, stage_result):
 
 
 def run_pipeline_evaluation():
-    """Run the evaluation pipeline"""
     with st.spinner("Initializing pipeline..."):
         try:
             # Create user prompt
@@ -1062,7 +1032,6 @@ def run_pipeline_evaluation():
             st.exception(e)
 
 def display_pipeline_results():
-    """Display pipeline results step by step"""
     results = st.session_state.evaluation_results
     
     if not results:
@@ -1108,8 +1077,144 @@ def display_pipeline_results():
         
         st.markdown("---")
 
+def parse_report_file(filepath):
+    if not os.path.exists(filepath):
+        return None
+    
+    with open(filepath, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # Split by stage headers
+    stages = {}
+    
+    # Extract header information
+    lines = content.split('\n')
+    header_info = {}
+    for i, line in enumerate(lines[:30]):  # Check first 30 lines
+        if 'Dataset:' in line:
+            header_info['dataset'] = line.split('Dataset:')[1].strip()
+        elif 'Timestamp:' in line:
+            header_info['timestamp'] = line.split('Timestamp:')[1].strip()
+        elif 'Target Column:' in line:
+            header_info['target'] = line.split('Target Column:')[1].strip()
+        elif 'User Objective:' in line:
+            header_info['objective'] = line.split('User Objective:')[1].strip()
+    
+    # Split by STAGE markers
+    stage_pattern = r'STAGE\s+(\d+(?:\.\d+)?)[:\s]+(.*?)(?=\n-{5,})'
+    import re
+    
+    current_stage = None
+    current_content = []
+    
+    for line in lines:
+        # Check if this is a stage header
+        stage_match = re.match(r'STAGE\s+(\d+(?:\.\d+)?)[:\s]+(.*)', line)
+        
+        if stage_match:
+            # Save previous stage
+            if current_stage:
+                stages[current_stage] = '\n'.join(current_content).strip()
+            
+            # Start new stage
+            stage_num = stage_match.group(1)
+            stage_name = stage_match.group(2).strip()
+            current_stage = f"Stage {stage_num}: {stage_name}"
+            current_content = []
+        
+        elif line.startswith('=' * 10) or line.startswith('-' * 10):
+            # Skip separator lines
+            continue
+        
+        elif current_stage:
+            current_content.append(line)
+    
+    # Save last stage
+    if current_stage:
+        stages[current_stage] = '\n'.join(current_content).strip()
+    
+    return header_info, stages
+
+def display_parsed_report(filepath, report_type="Full Report"):
+    result = parse_report_file(filepath)
+    
+    if not result:
+        st.warning(f"{report_type} file not found")
+        return
+    
+    header_info, stages = result
+    
+    # Display header information
+    if header_info:
+        with st.container():
+            st.markdown("### Report Information")
+            cols = st.columns(3)
+            if 'dataset' in header_info:
+                cols[0].metric("Dataset", header_info['dataset'])
+            if 'timestamp' in header_info:
+                cols[1].metric("Timestamp", header_info['timestamp'])
+            if 'target' in header_info:
+                cols[2].metric("Target Column", header_info['target'])
+            
+            if 'objective' in header_info:
+                st.info(f"**Objective:** {header_info['objective']}")
+        
+        st.markdown("---")
+    
+    # Display stages in expandable sections
+    if stages:
+        st.markdown("### Report Stages")
+        for stage_name, stage_content in stages.items():
+            with st.expander(stage_name, expanded=False):
+                # Check if content has subsections
+                if '[TOOL USED]' in stage_content or '[AGENT ANALYSIS]' in stage_content:
+                    # Split into subsections
+                    sections = stage_content.split('[TOOL USED]')
+                    
+                    for section in sections:
+                        if not section.strip():
+                            continue
+                        
+                        if '[TOOL RESULT]' in section and '[AGENT ANALYSIS]' in section:
+                            # Split tool result and analysis
+                            parts = section.split('[TOOL RESULT]')
+                            tool_name = parts[0].strip()
+                            
+                            remaining = parts[1].split('[AGENT ANALYSIS]')
+                            tool_result = remaining[0].strip()
+                            agent_analysis = remaining[1].strip() if len(remaining) > 1 else ""
+                            
+                            if tool_name:
+                                st.markdown(f"**Tool Used:** `{tool_name}`")
+                            
+                            if tool_result:
+                                with st.expander("Tool Result", expanded=False):
+                                    st.code(tool_result, language='json')
+                            
+                            if agent_analysis:
+                                st.markdown("**Agent Analysis:**")
+                                st.markdown(agent_analysis)
+                        
+                        elif '[AGENT ANALYSIS]' in section:
+                            parts = section.split('[AGENT ANALYSIS]')
+                            st.markdown("**Agent Analysis:**")
+                            st.markdown(parts[1].strip())
+                        
+                        else:
+                            st.markdown(section.strip())
+                
+                elif '[RECOMMENDATIONS]' in stage_content:
+                    # Special handling for recommendations
+                    parts = stage_content.split('[RECOMMENDATIONS]')
+                    st.markdown(parts[1].strip() if len(parts) > 1 else stage_content)
+                
+                else:
+                    # Simple content
+                    st.markdown(stage_content)
+    else:
+        st.warning("No stages found in report")
+
 def view_results_page():
-    """Page for viewing previous results"""
     st.markdown("<div class='main-header'>Previous Results</div>", unsafe_allow_html=True)
     
     if st.button("← Back to Main"):
@@ -1135,18 +1240,10 @@ def view_results_page():
         tab1, tab2, tab3 = st.tabs(["Full Report", "Agent Summary", "Visualizations"])
         
         with tab1:
-            if os.path.exists(report_file):
-                with open(report_file, 'r', encoding='utf-8') as f:
-                    st.text(f.read())
-            else:
-                st.warning("Report file not found")
+            display_parsed_report(report_file, "Full Report")
         
         with tab2:
-            if os.path.exists(summary_file):
-                with open(summary_file, 'r', encoding='utf-8') as f:
-                    st.text(f.read())
-            else:
-                st.warning("Summary file not found")
+            display_parsed_report(summary_file, "Agent Summary")
         
         with tab3:
             images_dir = os.path.join(report_dir, "images")
@@ -1161,26 +1258,111 @@ def view_results_page():
                 if image_files:
                     st.markdown(f"**Found {len(image_files)} visualizations**")
                     
-                    # Group by folder
-                    folders = {}
-                    for img in image_files:
-                        folder = os.path.dirname(img).replace(images_dir, '').strip(os.sep)
-                        if folder not in folders:
-                            folders[folder] = []
-                        folders[folder].append(img)
+                    # Separate main images from combination images
+                    main_images = []
+                    combination_images = {}
                     
-                    for folder, images in folders.items():
-                        folder_name = folder if folder else "Main Images"
-                        with st.expander(f"{folder_name}"):
-                            for img_path in images:
-                                st.image(img_path, caption=os.path.basename(img_path))
+                    for img_path in image_files:
+                        # Check if this is a combination image (contains "_combinations" in path)
+                        if '_combinations' in img_path:
+                            # Extract the combination name from the path
+                            path_parts = img_path.split(os.sep)
+                            
+                            # Find the folder with "_combinations" in it
+                            combo_folder = None
+                            for part in path_parts:
+                                if part.endswith('_combinations'):
+                                    combo_folder = part.replace('_combinations', '')
+                                    break
+                            
+                            if combo_folder:
+                                # Make it readable: "Age_Race" -> "Age + Race"
+                                combo_display = combo_folder.replace('_', ' + ')
+                                
+                                if combo_display not in combination_images:
+                                    combination_images[combo_display] = []
+                                combination_images[combo_display].append(img_path)
+                        else:
+                            # This is a main/simple visualization
+                            main_images.append(img_path)
+                    
+                    # Display main/simple visualizations
+                    if main_images:
+                        st.markdown("#### Main Visualizations")
+                        
+                        # Create list of image options
+                        main_image_options = {}
+                        for img_path in main_images:
+                            if os.path.exists(img_path):
+                                filename = os.path.basename(img_path)
+                                display_name = filename.replace('.png', '').replace('_', ' ').title()
+                                main_image_options[display_name] = img_path
+                        
+                        if main_image_options:
+                            selected_main = st.selectbox(
+                                "Select visualization to view:",
+                                options=["None"] + list(main_image_options.keys()),
+                                key="prev_main_viz_selector"
+                            )
+                            
+                            if selected_main != "None":
+                                st.image(main_image_options[selected_main], caption=selected_main, use_container_width=True)
+                    
+                    # Display combination visualizations
+                    if combination_images:
+                        st.markdown("---")
+                        st.markdown("#### Combined Sensitive Attribute Analysis")
+                        
+                        # Count total combination charts
+                        total_charts = sum(len(imgs) for imgs in combination_images.values())
+                        st.info(f"{len(combination_images)} attribute combinations available ({total_charts} total charts)")
+                        
+                        # Let user select which combination to view
+                        combo_options = sorted(combination_images.keys())
+                        selected_combo = st.selectbox(
+                            "Select attribute combination to analyze:",
+                            options=["None"] + combo_options,
+                            help="Choose which combination of sensitive attributes you want to view",
+                            key="prev_combo_selector"
+                        )
+                        
+                        if selected_combo != "None":
+                            st.markdown(f"##### {selected_combo}")
+                            combo_imgs = combination_images[selected_combo]
+                            
+                            # Create list of images for this combination
+                            combo_image_options = {}
+                            for img_path in combo_imgs:
+                                if os.path.exists(img_path):
+                                    filename = os.path.basename(img_path)
+                                    
+                                    # Create display name
+                                    if 'scale.png' in filename:
+                                        display_name = filename.replace('_scale.png', '').upper() + " Scale"
+                                    elif 'individual_combinations' in img_path:
+                                        display_name = filename.replace('.png', '').replace('_', ' - ')
+                                    else:
+                                        display_name = filename.replace('.png', '').replace('_', ' ').title()
+                                    
+                                    combo_image_options[display_name] = img_path
+                            
+                            if combo_image_options:
+                                selected_combo_img = st.selectbox(
+                                    f"Select {selected_combo} visualization:",
+                                    options=["None"] + list(combo_image_options.keys()),
+                                    key=f"prev_combo_img_selector_{selected_combo.replace(' + ', '_')}"
+                                )
+                                
+                                if selected_combo_img != "None":
+                                    st.image(combo_image_options[selected_combo_img], 
+                                           caption=selected_combo_img, 
+                                           use_container_width=True)
                 else:
                     st.info("No images found in this report")
             else:
                 st.info("No images directory found")
 
 def main():
-    """Main application entry point"""
     init_session_state()
     
     if st.session_state.mode is None:
