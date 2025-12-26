@@ -11,7 +11,7 @@ class ConversationalAgent(BaseAgent):
                   You are polite, professional, and engaging.
                """
     
-    def run(self, user_message: str, max_tokens: int = 1024) -> str:
+    def run(self, user_message: str, max_tokens: int = 4096) -> str:
         messages = [
             {"role": "system", "content": self.get_system_prompt()},
             {"role": "user", "content": user_message}

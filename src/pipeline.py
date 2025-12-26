@@ -9,11 +9,13 @@ from agents.data_analyst_agent import DataAnalystAgent
 from agents.conversational_agent import ConversationalAgent
 from agents.model_client import LocalModelClient, OpenRouterClient, GeminiClient
 from tools.fairness_tools import FairnessTools
+from tools.bias_mitigation_tools import BiasMitigationTools
 
 
 class DatasetEvaluationPipeline:
     def __init__(self, use_api_model: int = 0):
         self.fairness_tools = FairnessTools()
+        self.bias_mitigation_tools = BiasMitigationTools()
         
         if use_api_model == 1:
             self.model_client = OpenRouterClient(
@@ -46,6 +48,12 @@ class DatasetEvaluationPipeline:
         
         self.inspector_agent = FunctionCallerAgent(
             tool_manager=self.fairness_tools,
+            model_client=self.model_client,
+            reflect_on_tool_use=True
+        )
+        
+        self.bias_mitigation_agent = FunctionCallerAgent(
+            tool_manager=self.bias_mitigation_tools,
             model_client=self.model_client,
             reflect_on_tool_use=True
         )
@@ -162,7 +170,7 @@ class DatasetEvaluationPipeline:
         self.evaluation_results["stages"]["2_quality"] = quality
         
         print("\nSTAGE 3: Sensitive Attribute Detection")
-        sensitive = self._stage_3_sensitive_detection(dataset_name)
+        sensitive = self._stage_3_sensitive_detection(dataset_name, target_column)
         self.evaluation_results["stages"]["3_sensitive"] = sensitive
         
         print("\nSTAGE 4: Imbalance Analysis")
@@ -251,7 +259,7 @@ class DatasetEvaluationPipeline:
         
         return summary
     
-    def _stage_3_sensitive_detection(self, dataset_name: str) -> Dict[str, Any]:
+    def _stage_3_sensitive_detection(self, dataset_name: str, target_column: str = None) -> Dict[str, Any]:
         print("Tool: detect_sensitive_attributes")
         columns_result = self.fairness_tools.detect_sensitive_attributes(dataset_name)
         print(f"Tool result: {len(json.dumps(columns_result))} chars")
@@ -260,6 +268,10 @@ class DatasetEvaluationPipeline:
         print(f"\nSimplified summary:\n{simplified_summary}")
         
         print("\nStep 2: Agent identifying which columns are sensitive...")
+        target_exclusion_note = ""
+        if target_column:
+            target_exclusion_note = f"\n\nIMPORTANT: EXCLUDE the target column '{target_column}' from sensitive attributes - it's the variable being predicted, not a protected attribute."
+        
         analysis_prompt = f"""Analyze this dataset and identify ALL SENSITIVE/PROTECTED attribute columns.
 
                                 KEY SENSITIVE ATTRIBUTES TO LOOK FOR:
@@ -268,7 +280,7 @@ class DatasetEvaluationPipeline:
                                 - Socioeconomic: Income, Education, Occupation
                                 - Geographic: Native-country, Nationality
 
-                                {simplified_summary}
+                                {simplified_summary}{target_exclusion_note}
 
                                 IMPORTANT: Look at BOTH column names AND their values/distributions:
                                 - Race column with values like White, Black, Asian → SENSITIVE
@@ -293,7 +305,13 @@ class DatasetEvaluationPipeline:
         identified_columns = re.findall(column_pattern, sensitive_list)
         
         identified_columns = list(dict.fromkeys(identified_columns))
-        print(f"Extracted sensitive column names: {identified_columns}")
+        
+        # Explicitly exclude target column from sensitive columns
+        if target_column and target_column in identified_columns:
+            print(f"Removing target column '{target_column}' from sensitive attributes list")
+            identified_columns.remove(target_column)
+        
+        print(f"Extracted sensitive column names (excluding target): {identified_columns}")
         
         return {
             "tool_used": "detect_sensitive_attributes",
@@ -349,6 +367,11 @@ class DatasetEvaluationPipeline:
     
     def _stage_4_5_target_fairness_analysis(self, dataset_name: str, target_column: str, selected_pairs: list = None) -> Dict[str, Any]:
         sensitive_cols = self.evaluation_results["stages"]["3_sensitive"].get("sensitive_columns", [])
+        
+        # Ensure target column is not in sensitive columns (double-check)
+        if target_column in sensitive_cols:
+            print(f"WARNING: Target column '{target_column}' found in sensitive columns, removing it")
+            sensitive_cols = [col for col in sensitive_cols if col != target_column]
         
         if not sensitive_cols:
             print("No sensitive columns identified, skipping target fairness analysis")
@@ -573,6 +596,104 @@ class DatasetEvaluationPipeline:
     
     def _get_timestamp(self):
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    def apply_bias_mitigation(self, method: str, dataset_name: str, target_column: str,
+                             sensitive_columns: list = None, **kwargs) -> Dict[str, Any]:
+        """
+        Apply bias mitigation technique to the dataset.
+        
+        Args:
+            method: One of 'reweighting', 'smote', 'oversampling', 'undersampling'
+            dataset_name: Name of the dataset
+            target_column: Target column name
+            sensitive_columns: List of sensitive columns (required for reweighting)
+            **kwargs: Additional parameters for specific methods
+        """
+        try:
+            # Create generated_csv directory in report folder
+            output_dir = os.path.join(self.report_dir, "generated_csv")
+            os.makedirs(output_dir, exist_ok=True)
+            
+            print(f"\nApplying {method} bias mitigation...")
+            
+            if method == "reweighting":
+                if not sensitive_columns:
+                    return {"status": "error", "message": "Sensitive columns required for reweighting"}
+                result = self.bias_mitigation_tools.apply_reweighting(
+                    dataset_name=dataset_name,
+                    target_column=target_column,
+                    sensitive_columns=sensitive_columns,
+                    output_dir=output_dir
+                )
+            elif method == "smote":
+                k_neighbors = kwargs.get('k_neighbors', 5)
+                sampling_strategy = kwargs.get('sampling_strategy', 'auto')
+                result = self.bias_mitigation_tools.apply_smote(
+                    dataset_name=dataset_name,
+                    target_column=target_column,
+                    output_dir=output_dir,
+                    k_neighbors=k_neighbors,
+                    sampling_strategy=sampling_strategy
+                )
+            elif method == "oversampling":
+                sampling_strategy = kwargs.get('sampling_strategy', 'auto')
+                result = self.bias_mitigation_tools.apply_oversampling(
+                    dataset_name=dataset_name,
+                    target_column=target_column,
+                    output_dir=output_dir,
+                    sampling_strategy=sampling_strategy
+                )
+            elif method == "undersampling":
+                sampling_strategy = kwargs.get('sampling_strategy', 'auto')
+                result = self.bias_mitigation_tools.apply_undersampling(
+                    dataset_name=dataset_name,
+                    target_column=target_column,
+                    output_dir=output_dir,
+                    sampling_strategy=sampling_strategy
+                )
+            else:
+                return {"status": "error", "message": f"Unknown method: {method}"}
+            
+            return result
+            
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    def compare_mitigation_results(self, original_dataset: str, mitigated_dataset: str,
+                                   target_column: str, sensitive_columns: list) -> Dict[str, Any]:
+        """
+        Compare original and mitigated datasets.
+        """
+        try:
+            print("\nComparing original and mitigated datasets...")
+            result = self.bias_mitigation_tools.compare_datasets(
+                original_dataset=original_dataset,
+                mitigated_dataset=mitigated_dataset,
+                target_column=target_column,
+                sensitive_columns=sensitive_columns
+            )
+            
+            # Generate agent analysis of the comparison
+            analysis_prompt = f"""Analyze the comparison between original and mitigated datasets:
+            
+            {json.dumps(result, indent=2)}
+            
+            Provide a detailed analysis:
+            1. Was the bias mitigation effective? (Yes/No and why)
+            2. What improved? (specific metrics and percentages)
+            3. What remained problematic? (if any)
+            4. Recommendations for further improvements
+            
+            Be specific with numbers and provide actionable insights."""
+            
+            agent_analysis = self.recommendation_agent.run(analysis_prompt)
+            
+            result["agent_analysis"] = agent_analysis
+            
+            return result
+            
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
     
     def get_summary(self) -> Dict[str, Any]:
         if not self.evaluation_results:

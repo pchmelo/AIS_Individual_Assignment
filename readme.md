@@ -6,10 +6,12 @@ An AI-powered system for evaluating datasets for data quality issues and fairnes
 
 - 🔍 **Comprehensive Data Quality Analysis**: Detects missing values, type inconsistencies, suspicious patterns
 - ⚖️ **Fairness Evaluation**: Identifies sensitive attributes and analyzes target distribution bias
+- � **Bias Mitigation**: Apply techniques like SMOTE, Reweighting, Oversampling, Undersampling
 - 📊 **Rich Visualizations**: Interactive charts showing fairness metrics across attribute combinations
 - 🤖 **Multi-Model Support**: IBM Granite (local), Grok, or Google Gemini
 - 💻 **Dual Interface**: Choose between terminal CLI or web-based GUI
 - 📁 **Report Management**: Automatic timestamped reports with detailed findings
+- 🧪 **Generate Balanced Datasets**: Create and compare bias-mitigated versions of your data
 
 ## Quick Start
 
@@ -77,8 +79,14 @@ For detailed GUI documentation, see [GUI_GUIDE.md](GUI_GUIDE.md)
 4. **Stage 3**: Sensitive Attribute Detection
 5. **Stage 4**: Imbalance Analysis
 6. **Stage 4.5**: Target Fairness Analysis (optional, requires target column)
-7. **Stage 5**: Findings Integration
-8. **Stage 6**: Recommendations
+7. **Stage 5**: Findings Integration & Recommendations
+8. **Stage 6**: Bias Mitigation (✨ NEW - optional)
+   - Apply Reweighting (assign sample weights)
+   - Apply SMOTE (generate synthetic samples)
+   - Apply Random Oversampling (duplicate minority samples)
+   - Apply Random Undersampling (remove majority samples)
+   - Compare before/after with AI analysis
+   - Download generated datasets
 9. **Stage 7**: Report Generation
 
 ## Stage 4.5: Target Fairness Analysis
@@ -160,11 +168,31 @@ individual_assignment/
 - Scale-grouped visualizations for clarity
 - Individual combination graphs for detailed inspection
 
+### Bias Mitigation (✨ NEW)
+- **4 Techniques Available**:
+  - Reweighting: Assign weights to underrepresented groups
+  - SMOTE: Generate synthetic samples using k-NN
+  - Random Oversampling: Duplicate minority class samples
+  - Random Undersampling: Remove majority class samples
+- **Interactive Selection**: Choose method and configure parameters
+- **Automatic Comparison**: Before/after metrics with AI analysis
+- **Organized Storage**: Generated CSVs saved in `reports/.../generated_csv/`
+- **Effectiveness Review**: Agent evaluates if mitigation helped
+- See [BIAS_MITIGATION_GUIDE.md](BIAS_MITIGATION_GUIDE.md) for details
+
 ### Quality Assessment
 - Mathematical facts only (no subjective opinions)
 - Transparent tool outputs
 - Problem descriptions for each issue
 - Actionable recommendations
+
+## Documentation
+
+- **[BIAS_MITIGATION_GUIDE.md](BIAS_MITIGATION_GUIDE.md)**: Complete guide to bias mitigation features
+- **[BIAS_MITIGATION_QUICKSTART.md](BIAS_MITIGATION_QUICKSTART.md)**: Quick installation and usage
+- **[BIAS_MITIGATION_WORKFLOW.md](BIAS_MITIGATION_WORKFLOW.md)**: Visual workflow diagrams
+- **[BIAS_MITIGATION_EXAMPLES.md](BIAS_MITIGATION_EXAMPLES.md)**: Real-world examples and comparisons
+- **[GUI_GUIDE.md](GUI_GUIDE.md)**: Detailed GUI documentation
 
 ## Troubleshooting
 

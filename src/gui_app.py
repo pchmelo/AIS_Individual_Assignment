@@ -2,23 +2,17 @@ import streamlit as st
 import os
 import pandas as pd
 import sys
-
-# Add src to path for imports
-sys.path.insert(0, os.path.dirname(__file__))
-
 from pipeline import DatasetEvaluationPipeline
 
-# Get base directory (parent of src folder)
+sys.path.insert(0, os.path.dirname(__file__))
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Page configuration
 st.set_page_config(
     page_title="Dataset Fairness Evaluation",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for professional styling with dark mode support
 st.markdown("""
 <style>
     /* Main header styling */
@@ -574,7 +568,8 @@ def display_pipeline_stepwise():
         ("3_sensitive", "Sensitive Attribute Detection"),
         ("4_imbalance", "Imbalance Analysis"),
         ("4_5_target_fairness", "Target Fairness Analysis") if st.session_state.target_column else None,
-        ("5_recommendations", "Recommendations")
+        ("5_recommendations", "Recommendations"),
+        ("6_bias_mitigation", "Bias Mitigation") if st.session_state.target_column else None
     ]
     stages = [s for s in stages if s is not None]
     
@@ -687,6 +682,234 @@ def display_pipeline_stepwise():
                 
                 return  # Don't show continue button yet
         
+        # Special handling for Stage 6 - Bias Mitigation
+        if stage_key == "6_bias_mitigation" and stage_key not in results["stages"]:
+            st.markdown("### Stage 6: Bias Mitigation")
+            st.info("Apply bias mitigation techniques to generate balanced datasets")
+            
+            # Check if we should show the mitigation options
+            if 'show_mitigation_prompt' not in st.session_state:
+                st.session_state.show_mitigation_prompt = True
+            
+            if st.session_state.show_mitigation_prompt:
+                st.markdown("---")
+                st.markdown("**Would you like to apply bias mitigation techniques to fix imbalances?**")
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.button("Yes, apply mitigation", type="primary", key="yes_mitigation"):
+                        st.session_state.show_mitigation_prompt = False
+                        st.session_state.apply_mitigation = True
+                        st.rerun()
+                with col2:
+                    if st.button("No, skip this step", key="no_mitigation"):
+                        # Create a result indicating skip
+                        results["stages"]["6_bias_mitigation"] = {
+                            "status": "skipped",
+                            "message": "User chose to skip bias mitigation"
+                        }
+                        st.session_state.show_mitigation_prompt = False
+                        st.rerun()
+                with col3:
+                    pass
+                
+                return  # Don't proceed until user makes a choice
+            
+            # If user chose to apply mitigation, show the options
+            if st.session_state.get('apply_mitigation', False):
+                st.markdown("---")
+                st.markdown("#### Select Bias Mitigation Methods")
+                
+                # Multi-method selection
+                selected_methods = st.multiselect(
+                    "Select one or more mitigation techniques:",
+                    options=["Reweighting", "SMOTE", "Random Oversampling", "Random Undersampling"],
+                    default=[],
+                    help="You can select multiple methods to compare their effectiveness",
+                    key="mitigation_methods"
+                )
+                
+                if not selected_methods:
+                    st.info("Please select at least one mitigation method to proceed.")
+                    if st.button("Cancel", key="cancel_mitigation_early"):
+                        st.session_state.show_mitigation_prompt = True
+                        st.session_state.apply_mitigation = False
+                        st.rerun()
+                    return
+                
+                # Get sensitive columns
+                sensitive_cols = []
+                if "3_sensitive" in results["stages"]:
+                    sensitive_cols = results["stages"]["3_sensitive"].get("sensitive_columns", [])
+                
+                # Configure parameters for each selected method
+                st.markdown("#### Configure Methods")
+                
+                all_methods_config = {}
+                
+                for method in selected_methods:
+                    with st.expander(f"{method} Parameters", expanded=True):
+                        method_params = {}
+                        
+                        if method == "Reweighting":
+                            st.info("Reweighting assigns sample weights to balance underrepresented groups. No new samples are added.")
+                            if sensitive_cols:
+                                selected_sensitive = st.multiselect(
+                                    "Select sensitive columns for reweighting:",
+                                    options=sensitive_cols,
+                                    default=sensitive_cols,
+                                    help="Weights will be computed based on these sensitive attributes",
+                                    key=f"reweight_sensitive_{method}"
+                                )
+                                method_params['sensitive_columns'] = selected_sensitive
+                            else:
+                                st.warning("No sensitive columns detected. Reweighting requires sensitive attributes.")
+                        
+                        elif method == "SMOTE":
+                            st.info("SMOTE generates synthetic samples for minority classes using k-nearest neighbors.")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                k_neighbors = st.number_input(
+                                    "K Neighbors:",
+                                    min_value=1,
+                                    max_value=10,
+                                    value=5,
+                                    help="Number of nearest neighbors to use for generating synthetic samples",
+                                    key=f"smote_k_{method}"
+                                )
+                                method_params['k_neighbors'] = k_neighbors
+                            with col2:
+                                sampling_strategy = st.selectbox(
+                                    "Sampling Strategy:",
+                                    options=["auto", "minority", "not majority", "all"],
+                                    help="Which classes to oversample",
+                                    key=f"smote_strategy_{method}"
+                                )
+                                method_params['sampling_strategy'] = sampling_strategy
+                        
+                        elif method == "Random Oversampling":
+                            st.info("Random Oversampling duplicates samples from minority classes.")
+                            sampling_strategy = st.selectbox(
+                                "Sampling Strategy:",
+                                options=["auto", "minority", "not majority", "all"],
+                                help="Which classes to oversample",
+                                key=f"oversample_strategy_{method}"
+                            )
+                            method_params['sampling_strategy'] = sampling_strategy
+                        
+                        elif method == "Random Undersampling":
+                            st.info("Random Undersampling removes samples from majority classes.")
+                            st.warning("This method reduces dataset size")
+                            sampling_strategy = st.selectbox(
+                                "Sampling Strategy:",
+                                options=["auto", "not minority", "majority", "all"],
+                                help="Which classes to undersample",
+                                key=f"undersample_strategy_{method}"
+                            )
+                            method_params['sampling_strategy'] = sampling_strategy
+                        
+                        all_methods_config[method] = method_params
+                
+                st.markdown("---")
+                
+                # Apply button
+                col1, col2, col3 = st.columns([2, 1, 1])
+                with col2:
+                    if st.button("Cancel", key="cancel_mitigation"):
+                        st.session_state.show_mitigation_prompt = True
+                        st.session_state.apply_mitigation = False
+                        st.rerun()
+                
+                with col3:
+                    # Check if all methods have valid parameters
+                    can_apply = True
+                    for method in selected_methods:
+                        if method == "Reweighting" and not all_methods_config[method].get('sensitive_columns'):
+                            can_apply = False
+                            break
+                    
+                    if st.button("Apply All Methods", type="primary", key="apply_all_btn", disabled=not can_apply):
+                        # Immediately mark stage as in-progress to prevent re-execution
+                        if "6_bias_mitigation" not in results["stages"]:
+                            results["stages"]["6_bias_mitigation"] = {
+                                "status": "in_progress",
+                                "message": "Processing..."
+                            }
+                        
+                        # Map method names to internal names
+                        method_map = {
+                            "Reweighting": "reweighting",
+                            "SMOTE": "smote",
+                            "Random Oversampling": "oversampling",
+                            "Random Undersampling": "undersampling"
+                        }
+                        
+                        # Progress tracking
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        all_results = {}
+                        
+                        for idx, method in enumerate(selected_methods):
+                            status_text.text(f"Applying {method}... ({idx + 1}/{len(selected_methods)})")
+                            
+                            try:
+                                method_params = all_methods_config[method]
+                                
+                                # Apply mitigation
+                                mitigation_result = pipeline.apply_bias_mitigation(
+                                    method=method_map[method],
+                                    dataset_name=results.get('dataset'),
+                                    target_column=results.get('target_column'),
+                                    sensitive_columns=method_params.get('sensitive_columns'),
+                                    **{k: v for k, v in method_params.items() if k != 'sensitive_columns'}
+                                )
+                                
+                                # Compare results if successful
+                                if mitigation_result.get("status") == "success":
+                                    comparison_result = pipeline.compare_mitigation_results(
+                                        original_dataset=results.get('dataset'),
+                                        mitigated_dataset=mitigation_result.get("output_file"),
+                                        target_column=results.get('target_column'),
+                                        sensitive_columns=sensitive_cols
+                                    )
+                                    
+                                    all_results[method] = {
+                                        "status": "success",
+                                        "method_params": method_params,
+                                        "mitigation_result": mitigation_result,
+                                        "comparison_result": comparison_result
+                                    }
+                                else:
+                                    all_results[method] = {
+                                        "status": "error",
+                                        "error": mitigation_result.get("message", "Unknown error")
+                                    }
+                                
+                            except Exception as e:
+                                all_results[method] = {
+                                    "status": "error",
+                                    "error": str(e)
+                                }
+                            
+                            progress_bar.progress((idx + 1) / len(selected_methods))
+                        
+                        status_text.empty()
+                        progress_bar.empty()
+                        
+                        # Store all results
+                        results["stages"]["6_bias_mitigation"] = {
+                            "status": "success",
+                            "methods": all_results,
+                            "applied_methods": selected_methods
+                        }
+                        
+                        st.session_state.apply_mitigation = False
+                        st.success(f"✓ Successfully applied {len(selected_methods)} method(s)!")
+                        st.rerun()
+                
+                return 
+        
         # Execute stage if not already done
         if stage_key not in results["stages"]:
             with st.spinner(f"Running {stage_name}..."):
@@ -749,7 +972,7 @@ def execute_stage(pipeline, stage_key, user_prompt, dataset_name, target_column)
     elif stage_key == "2_quality":
         return pipeline._stage_2_data_quality(dataset_name)
     elif stage_key == "3_sensitive":
-        return pipeline._stage_3_sensitive_detection(dataset_name)
+        return pipeline._stage_3_sensitive_detection(dataset_name, target_column)
     elif stage_key == "4_imbalance":
         return pipeline._stage_4_imbalance_analysis(dataset_name)
     elif stage_key == "4_5_target_fairness":
@@ -774,10 +997,310 @@ def display_stage_results(stage_key, stage_result):
         "3_sensitive": "Stage 3: Sensitive Attribute Detection",
         "4_imbalance": "Stage 4: Imbalance Analysis",
         "4_5_target_fairness": "Stage 4.5: Target Fairness Analysis",
-        "5_recommendations": "Stage 5: Recommendations"
+        "5_recommendations": "Stage 5: Recommendations",
+        "6_bias_mitigation": "Stage 6: Bias Mitigation"
     }
     
     st.markdown(f"### {stage_names.get(stage_key, stage_key)}")
+    
+    # Special display for Stage 6 (Bias Mitigation)
+    if stage_key == "6_bias_mitigation":
+        if stage_result.get("status") == "skipped":
+            st.info("Bias mitigation was skipped by user.")
+            return
+        elif stage_result.get("status") == "error":
+            st.error(f"Error applying {stage_result.get('method', 'mitigation')}: {stage_result.get('error', 'Unknown error')}")
+            return
+        elif stage_result.get("status") == "success":
+            # Check if multiple methods were applied
+            if "methods" in stage_result:
+                # Multi-method display
+                methods_results = stage_result["methods"]
+                applied_methods = stage_result.get("applied_methods", list(methods_results.keys()))
+                
+                st.success(f"✓ Successfully applied {len(applied_methods)} method(s)!")
+                
+                # Create comparison dashboard first
+                st.markdown("---")
+                st.markdown("### Methods Comparison Dashboard")
+                
+                import pandas as pd
+                
+                # Collect comparison metrics
+                comparison_data = []
+                successful_methods = {}
+                
+                for method in applied_methods:
+                    method_result = methods_results.get(method, {})
+                    if method_result.get("status") == "success":
+                        successful_methods[method] = method_result
+                        
+                        mitigation_result = method_result.get("mitigation_result", {})
+                        comparison_result = method_result.get("comparison_result", {})
+                        imb_metrics = comparison_result.get("imbalance_metrics", {})
+                        
+                        original_rows = mitigation_result.get("original_rows", 0)
+                        new_rows = mitigation_result.get("new_rows", original_rows)
+                        rows_change = new_rows - original_rows
+                        
+                        orig_ratio = imb_metrics.get("original_imbalance_ratio", 0)
+                        mit_ratio = imb_metrics.get("mitigated_imbalance_ratio", 0)
+                        improved = imb_metrics.get("improvement", "No")
+                        
+                        comparison_data.append({
+                            "Method": method,
+                            "Original Rows": f"{original_rows:,}",
+                            "New Rows": f"{new_rows:,}",
+                            "Rows Change": f"{rows_change:+,}" if rows_change != 0 else "0",
+                            "Original Imbalance": f"{orig_ratio:.2f}",
+                            "New Imbalance": f"{mit_ratio:.2f}",
+                            "Improvement": "✓" if improved == "Yes" else "✗"
+                        })
+                
+                if comparison_data:
+                    df_comparison = pd.DataFrame(comparison_data)
+                    st.dataframe(df_comparison, use_container_width=True, hide_index=True)
+                    
+                    # Best method recommendation
+                    best_method = None
+                    best_ratio = float('inf')
+                    for method in applied_methods:
+                        method_result = methods_results.get(method, {})
+                        if method_result.get("status") == "success":
+                            comparison_result = method_result.get("comparison_result", {})
+                            imb_metrics = comparison_result.get("imbalance_metrics", {})
+                            mit_ratio = imb_metrics.get("mitigated_imbalance_ratio", float('inf'))
+                            if mit_ratio < best_ratio:
+                                best_ratio = mit_ratio
+                                best_method = method
+                    
+                    if best_method:
+                        st.info(f"**Best Method:** {best_method} achieved the lowest imbalance ratio ({best_ratio:.2f})")
+                else:
+                    st.warning("No successful methods to compare.")
+                
+                # Individual method results in dropdowns
+                st.markdown("---")
+                st.markdown("### Individual Method Results")
+                
+                for method in applied_methods:
+                    method_result = methods_results.get(method, {})
+                    
+                    with st.expander(f"{method} - Detailed Results", expanded=False):
+                        if method_result.get("status") == "error":
+                            st.error(f"Error: {method_result.get('error', 'Unknown error')}")
+                            continue
+                        
+                        mitigation_result = method_result.get("mitigation_result", {})
+                        comparison_result = method_result.get("comparison_result", {})
+                        
+                        # Summary metrics
+                        st.markdown("#### Summary")
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            original_rows = mitigation_result.get("original_rows", 0)
+                            st.metric("Original Rows", f"{original_rows:,}")
+                        
+                        with col2:
+                            new_rows = mitigation_result.get("new_rows", original_rows)
+                            st.metric("New Rows", f"{new_rows:,}")
+                        
+                        with col3:
+                            if "rows_added" in mitigation_result:
+                                st.metric("Rows Added", f"+{mitigation_result['rows_added']:,}", delta=mitigation_result['rows_added'])
+                            elif "rows_removed" in mitigation_result:
+                                st.metric("Rows Removed", f"-{mitigation_result['rows_removed']:,}", delta=-mitigation_result['rows_removed'])
+                        
+                        with col4:
+                            output_file = mitigation_result.get("output_file", "")
+                            if output_file:
+                                filename = os.path.basename(output_file)
+                                st.metric("Output File", "✓")
+                                st.caption(filename)
+                        
+                        # Distribution comparison
+                        st.markdown("---")
+                        st.markdown("#### Target Distribution Comparison")
+                        
+                        dist_before = mitigation_result.get("distribution_before", {})
+                        dist_after = mitigation_result.get("distribution_after", dist_before)
+                        
+                        if dist_before and dist_after:
+                            # Create comparison dataframe
+                            all_values = set(dist_before.keys()) | set(dist_after.keys())
+                            dist_comparison_data = []
+                            
+                            for value in sorted(all_values):
+                                before_count = dist_before.get(value, 0)
+                                after_count = dist_after.get(value, 0)
+                                before_pct = (before_count / sum(dist_before.values()) * 100) if dist_before else 0
+                                after_pct = (after_count / sum(dist_after.values()) * 100) if dist_after else 0
+                                
+                                dist_comparison_data.append({
+                                    "Class": str(value),
+                                    "Before Count": before_count,
+                                    "Before %": f"{before_pct:.2f}%",
+                                    "After Count": after_count,
+                                    "After %": f"{after_pct:.2f}%",
+                                    "Change": after_count - before_count
+                                })
+                            
+                            df_dist = pd.DataFrame(dist_comparison_data)
+                            st.dataframe(df_dist, use_container_width=True, hide_index=True)
+                        
+                        # Imbalance metrics
+                        if comparison_result.get("imbalance_metrics"):
+                            st.markdown("---")
+                            st.markdown("#### Imbalance Improvement")
+                            
+                            imb_metrics = comparison_result["imbalance_metrics"]
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                orig_ratio = imb_metrics.get("original_imbalance_ratio", 0)
+                                st.metric("Original Imbalance Ratio", f"{orig_ratio:.2f}")
+                            
+                            with col2:
+                                mit_ratio = imb_metrics.get("mitigated_imbalance_ratio", 0)
+                                delta = mit_ratio - orig_ratio
+                                st.metric("Mitigated Imbalance Ratio", f"{mit_ratio:.2f}", 
+                                         delta=f"{delta:.2f}", delta_color="inverse")
+                            
+                            with col3:
+                                improved = imb_metrics.get("improvement", "No")
+                                if improved == "Yes":
+                                    st.success("Imbalance Improved")
+                                else:
+                                    st.warning("No Improvement")
+                        
+                        # Agent analysis
+                        if comparison_result.get("agent_analysis"):
+                            st.markdown("---")
+                            st.markdown("#### Agent Analysis")
+                            st.markdown(comparison_result["agent_analysis"])
+                        
+                        # Download button for generated CSV
+                        if output_file and os.path.exists(output_file):
+                            st.markdown("---")
+                            with open(output_file, 'rb') as f:
+                                st.download_button(
+                                    label=f"Download {method} Dataset",
+                                    data=f,
+                                    file_name=os.path.basename(output_file),
+                                    mime="text/csv",
+                                    key=f"download_{method.replace(' ', '_')}"
+                                )
+            else:
+                # Single method display (backward compatibility)
+                st.success(f"{stage_result.get('method', 'Bias mitigation')} applied successfully!")
+                
+                # Display mitigation results
+                mitigation_result = stage_result.get("mitigation_result", {})
+                comparison_result = stage_result.get("comparison_result", {})
+                
+                # Summary metrics
+                st.markdown("#### Summary")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    original_rows = mitigation_result.get("original_rows", 0)
+                    st.metric("Original Rows", f"{original_rows:,}")
+                
+                with col2:
+                    new_rows = mitigation_result.get("new_rows", original_rows)
+                    st.metric("New Rows", f"{new_rows:,}")
+                
+                with col3:
+                    if "rows_added" in mitigation_result:
+                        st.metric("Rows Added", f"+{mitigation_result['rows_added']:,}", delta=mitigation_result['rows_added'])
+                    elif "rows_removed" in mitigation_result:
+                        st.metric("Rows Removed", f"-{mitigation_result['rows_removed']:,}", delta=-mitigation_result['rows_removed'])
+                
+                with col4:
+                    output_file = mitigation_result.get("output_file", "")
+                    if output_file:
+                        filename = os.path.basename(output_file)
+                        st.metric("Output File", "✓")
+                        st.caption(filename)
+                
+                # Distribution comparison
+                st.markdown("---")
+                st.markdown("#### Target Distribution Comparison")
+                
+                dist_before = mitigation_result.get("distribution_before", {})
+                dist_after = mitigation_result.get("distribution_after", dist_before)
+                
+                if dist_before and dist_after:
+                    import pandas as pd
+                    
+                    # Create comparison dataframe
+                    all_values = set(dist_before.keys()) | set(dist_after.keys())
+                    comparison_data = []
+                    
+                    for value in sorted(all_values):
+                        before_count = dist_before.get(value, 0)
+                        after_count = dist_after.get(value, 0)
+                        before_pct = (before_count / sum(dist_before.values()) * 100) if dist_before else 0
+                        after_pct = (after_count / sum(dist_after.values()) * 100) if dist_after else 0
+                        
+                        comparison_data.append({
+                            "Class": str(value),
+                            "Before Count": before_count,
+                            "Before %": f"{before_pct:.2f}%",
+                            "After Count": after_count,
+                            "After %": f"{after_pct:.2f}%",
+                            "Change": after_count - before_count
+                        })
+                    
+                    df_comparison = pd.DataFrame(comparison_data)
+                    st.dataframe(df_comparison, use_container_width=True, hide_index=True)
+                
+                # Imbalance metrics
+                if comparison_result.get("imbalance_metrics"):
+                    st.markdown("---")
+                    st.markdown("#### Imbalance Improvement")
+                    
+                    imb_metrics = comparison_result["imbalance_metrics"]
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        orig_ratio = imb_metrics.get("original_imbalance_ratio", 0)
+                        st.metric("Original Imbalance Ratio", f"{orig_ratio:.2f}")
+                    
+                    with col2:
+                        mit_ratio = imb_metrics.get("mitigated_imbalance_ratio", 0)
+                        delta = mit_ratio - orig_ratio
+                        st.metric("Mitigated Imbalance Ratio", f"{mit_ratio:.2f}", 
+                                 delta=f"{delta:.2f}", delta_color="inverse")
+                    
+                    with col3:
+                        improved = imb_metrics.get("improvement", "No")
+                        if improved == "Yes":
+                            st.success("Imbalance Improved")
+                        else:
+                            st.warning("No Improvement")
+                
+                # Agent analysis
+                if comparison_result.get("agent_analysis"):
+                    st.markdown("---")
+                    st.markdown("#### Agent Analysis")
+                    with st.expander("View Detailed Analysis", expanded=True):
+                        st.markdown(comparison_result["agent_analysis"])
+                
+                # Download button for generated CSV
+                if output_file and os.path.exists(output_file):
+                    st.markdown("---")
+                    with open(output_file, 'rb') as f:
+                        st.download_button(
+                            label="Download Mitigated Dataset",
+                            data=f,
+                            file_name=os.path.basename(output_file),
+                            mime="text/csv",
+                            key="download_mitigated"
+                        )
+            
+            return
     
     # Display tool result if available
     if "tool_result" in stage_result:
@@ -1237,7 +1760,7 @@ def view_results_page():
         report_file = os.path.join(report_dir, "evaluation_report.txt")
         summary_file = os.path.join(report_dir, "agent_summary.txt")
         
-        tab1, tab2, tab3 = st.tabs(["Full Report", "Agent Summary", "Visualizations"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["Full Report", "Agent Summary", "Recommendations", "Bias Mitigation", "Visualizations"])
         
         with tab1:
             display_parsed_report(report_file, "Full Report")
@@ -1246,6 +1769,154 @@ def view_results_page():
             display_parsed_report(summary_file, "Agent Summary")
         
         with tab3:
+            # Display Stage 5 - Recommendations
+            st.markdown("### Stage 5: Recommendations")
+            if os.path.exists(report_file):
+                with open(report_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    # Try to extract recommendations section - look for multiple possible headers
+                    rec_start = -1
+                    rec_end = -1
+                    
+                    # Try different header formats
+                    if "[RECOMMENDATIONS]" in content:
+                        rec_start = content.find("[RECOMMENDATIONS]")
+                        # Find the next major section (Stage or end marker)
+                        temp = content[rec_start:]
+                        # Look for next stage marker
+                        next_markers = [
+                            temp.find("\n\n6_BIAS_MITIGATION"),
+                            temp.find("\n\nSTAGE 6:"),
+                            temp.find("\n\n================================================================================\nEND OF REPORT"),
+                        ]
+                        next_markers = [m for m in next_markers if m > 0]
+                        if next_markers:
+                            rec_end = rec_start + min(next_markers)
+                    elif "5_RECOMMENDATIONS" in content:
+                        rec_start = content.find("5_RECOMMENDATIONS")
+                        # Find the next stage
+                        temp = content[rec_start:]
+                        next_markers = [
+                            temp.find("\n\n6_BIAS_MITIGATION"),
+                            temp.find("\n\nSTAGE 6:"),
+                            temp.find("\n\n================================================================================\nEND OF REPORT"),
+                        ]
+                        next_markers = [m for m in next_markers if m > 0]
+                        if next_markers:
+                            rec_end = rec_start + min(next_markers)
+                    
+                    if rec_start >= 0:
+                        if rec_end > rec_start:
+                            rec_section = content[rec_start:rec_end]
+                        else:
+                            rec_section = content[rec_start:]
+                        st.markdown(rec_section)
+                    else:
+                        st.info("No recommendations found in this report.")
+            else:
+                st.info("Report file not found.")
+        
+        with tab4:
+            # Display Stage 6 - Bias Mitigation results
+            st.markdown("### Stage 6: Bias Mitigation Results")
+            
+            # Check for generated CSV files
+            generated_csv_dir = os.path.join(report_dir, "generated_csv")
+            if os.path.exists(generated_csv_dir):
+                csv_files = [f for f in os.listdir(generated_csv_dir) if f.endswith('.csv')]
+                
+                if csv_files:
+                    st.success(f"Found {len(csv_files)} mitigated dataset(s)")
+                    
+                    # Try to parse method names from filenames
+                    methods_data = {}
+                    for csv_file in csv_files:
+                        if 'smote' in csv_file.lower():
+                            methods_data['SMOTE'] = csv_file
+                        elif 'reweighted' in csv_file.lower():
+                            methods_data['Reweighting'] = csv_file
+                        elif 'oversampled' in csv_file.lower():
+                            methods_data['Random Oversampling'] = csv_file
+                        elif 'undersampled' in csv_file.lower():
+                            methods_data['Random Undersampling'] = csv_file
+                    
+                    if methods_data:
+                        # Create comparison table
+                        st.markdown("#### Methods Comparison")
+                        
+                        import pandas as pd
+                        comparison_data = []
+                        
+                        for method, filename in methods_data.items():
+                            filepath = os.path.join(generated_csv_dir, filename)
+                            try:
+                                df = pd.read_csv(filepath)
+                                row_count = len(df)
+                                
+                                # Try to get target column (assume it's mentioned in report)
+                                # For now, just show basic stats
+                                comparison_data.append({
+                                    "Method": method,
+                                    "Rows": f"{row_count:,}",
+                                    "File": filename
+                                })
+                            except Exception as e:
+                                st.error(f"Error reading {filename}: {str(e)}")
+                        
+                        if comparison_data:
+                            df_comparison = pd.DataFrame(comparison_data)
+                            st.dataframe(df_comparison, use_container_width=True, hide_index=True)
+                        
+                        # Show individual method results in dropdowns
+                        st.markdown("---")
+                        st.markdown("#### Individual Method Details")
+                        
+                        for method, filename in methods_data.items():
+                            with st.expander(f"{method} - Detailed Results"):
+                                filepath = os.path.join(generated_csv_dir, filename)
+                                
+                                try:
+                                    df = pd.read_csv(filepath)
+                                    
+                                    st.markdown("##### Dataset Information")
+                                    col1, col2, col3 = st.columns(3)
+                                    with col1:
+                                        st.metric("Total Rows", f"{len(df):,}")
+                                    with col2:
+                                        st.metric("Total Columns", len(df.columns))
+                                    with col3:
+                                        if 'sample_weight' in df.columns:
+                                            st.metric("Has Weights", "Yes")
+                                        else:
+                                            st.metric("Has Weights", "No")
+                                    
+                                    st.markdown("##### Column Names")
+                                    st.write(", ".join(df.columns.tolist()))
+                                    
+                                    st.markdown("##### Sample Data (First 5 Rows)")
+                                    st.dataframe(df.head(), use_container_width=True)
+                                    
+                                    # Download button
+                                    st.markdown("---")
+                                    with open(filepath, 'rb') as f:
+                                        st.download_button(
+                                            label=f"Download {method} Dataset",
+                                            data=f,
+                                            file_name=filename,
+                                            mime="text/csv",
+                                            key=f"download_prev_{method.replace(' ', '_')}"
+                                        )
+                                    
+                                except Exception as e:
+                                    st.error(f"Error displaying {filename}: {str(e)}")
+                    else:
+                        st.info("Generated CSV files found, but could not identify mitigation methods.")
+                else:
+                    st.info("No bias mitigation was applied in this evaluation.")
+            else:
+                st.info("No bias mitigation was applied in this evaluation.")
+        
+        with tab5:
             images_dir = os.path.join(report_dir, "images")
             if os.path.exists(images_dir):
                 # List all image files

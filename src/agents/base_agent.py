@@ -9,7 +9,7 @@ class BaseAgent(ABC):
         else:
             self.model_client = model_client
     
-    def ask_model(self, messages, temperature=0.2, max_tokens=2048):
+    def ask_model(self, messages, temperature=0.2, max_tokens=4096):
         return self.model_client.generate(messages, temperature, max_tokens)
     
     @abstractmethod

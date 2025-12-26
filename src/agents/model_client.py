@@ -16,7 +16,7 @@ load_dotenv()
 
 class BaseModelClient(ABC):    
     @abstractmethod
-    def generate(self, messages: List[Dict[str, str]], temperature: float = 0.2, max_tokens: int = 2048) -> str:
+    def generate(self, messages: List[Dict[str, str]], temperature: float = 0.2, max_tokens: int = 4096) -> str:
         pass
     
     @abstractmethod
@@ -96,7 +96,7 @@ class OpenRouterClient(BaseModelClient):
         
         print(f"OpenRouter client initialized: {model}")
     
-    def generate(self, messages: List[Dict[str, str]], temperature: float = 0.2, max_tokens: int = 2048) -> str:
+    def generate(self, messages: List[Dict[str, str]], temperature: float = 0.2, max_tokens: int = 4096) -> str:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -143,7 +143,7 @@ class GeminiClient(BaseModelClient):
         
         print(f"Gemini client initialized: {model}")
     
-    def generate(self, messages: List[Dict[str, str]], temperature: float = 0.2, max_tokens: int = 2048) -> str:        
+    def generate(self, messages: List[Dict[str, str]], temperature: float = 0.2, max_tokens: int = 4096) -> str:        
         chat_history = []
         system_instruction = None
         
