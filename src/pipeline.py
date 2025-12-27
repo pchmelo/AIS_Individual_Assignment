@@ -489,6 +489,7 @@ class DatasetEvaluationPipeline:
             "4_5_target_fairness": "STAGE 4.5: TARGET FAIRNESS ANALYSIS",
             "5_integration": "STAGE 5: FINDINGS INTEGRATION",
             "6_recommendations": "STAGE 6: RECOMMENDATIONS",
+            "6_bias_mitigation": "6_BIAS_MITIGATION",
         }
         
         for stage_name, stage_data in self.evaluation_results["stages"].items():
@@ -497,28 +498,88 @@ class DatasetEvaluationPipeline:
             report.append("-" * 80)
             
             if isinstance(stage_data, dict):
-                if "tool_used" in stage_data:
+                # Special handling for 6_bias_mitigation stage
+                if stage_name == "6_bias_mitigation" and "methods" in stage_data:
+                    methods_results = stage_data["methods"]
+                    applied_methods = stage_data.get("applied_methods", list(methods_results.keys()))
+                    
+                    report.append(f"\nStatus: {stage_data.get('status', 'unknown')}")
+                    report.append(f"Applied Methods: {', '.join(applied_methods)}")
+                    report.append("")
+                    
+                    # Detailed results for each method
+                    for method in applied_methods:
+                        method_result = methods_results.get(method, {})
+                        
+                        report.append(f"\n[{method.upper()}]")
+                        report.append("-" * 40)
+                        
+                        if method_result.get("status") == "error":
+                            report.append(f"Error: {method_result.get('error', 'Unknown error')}")
+                            continue
+                        
+                        # Mitigation results
+                        mitigation_result = method_result.get("mitigation_result", {})
+                        if mitigation_result:
+                            report.append("\n[MITIGATION RESULTS]")
+                            report.append(json.dumps(mitigation_result, indent=2))
+                        
+                        # Comparison results
+                        comparison_result = method_result.get("comparison_result", {})
+                        if comparison_result:
+                            report.append("\n[COMPARISON RESULTS]")
+                            comparison_without_analysis = {k: v for k, v in comparison_result.items() if k != "agent_analysis"}
+                            report.append(json.dumps(comparison_without_analysis, indent=2))
+                        
+                        # Agent analysis for this method
+                        agent_analysis = comparison_result.get("agent_analysis")
+                        if agent_analysis:
+                            report.append("\n[AGENT ANALYSIS]")
+                            report.append(agent_analysis)
+                        
+                        report.append("")
+                
+                # Regular stage handling
+                elif "tool_used" in stage_data:
                     report.append(f"\n[TOOL USED]: {stage_data['tool_used']}")
                     report.append("")
+                    
+                    if "tool_result" in stage_data:
+                        report.append("\n[TOOL RESULT]")
+                        report.append(json.dumps(stage_data["tool_result"], indent=2))
+                    
+                    if "agent_analysis" in stage_data:
+                        report.append("\n\n[AGENT ANALYSIS]")
+                        report.append("-" * 80)
+                        report.append(stage_data["agent_analysis"])
+                    
+                    if "agent_response" in stage_data and "agent_analysis" not in stage_data:
+                        report.append("\n\n[AGENT RESPONSE]")
+                        report.append("-" * 80)
+                        report.append(str(stage_data["agent_response"]))
+                    
+                    if "recommendations" in stage_data:
+                        report.append("\n\n[RECOMMENDATIONS]")
+                        report.append("-" * 80)
+                        report.append(stage_data["recommendations"])
                 
-                if "tool_result" in stage_data:
-                    report.append("\n[TOOL RESULT]")
-                    report.append(json.dumps(stage_data["tool_result"], indent=2))
-                
-                if "agent_analysis" in stage_data:
+                elif "agent_analysis" in stage_data:
                     report.append("\n\n[AGENT ANALYSIS]")
                     report.append("-" * 80)
                     report.append(stage_data["agent_analysis"])
                 
-                if "agent_response" in stage_data and "agent_analysis" not in stage_data:
+                elif "agent_response" in stage_data:
                     report.append("\n\n[AGENT RESPONSE]")
                     report.append("-" * 80)
                     report.append(str(stage_data["agent_response"]))
                 
-                if "recommendations" in stage_data:
+                elif "recommendations" in stage_data:
                     report.append("\n\n[RECOMMENDATIONS]")
                     report.append("-" * 80)
                     report.append(stage_data["recommendations"])
+                
+                else:
+                    report.append(json.dumps(stage_data, indent=2))
             else:
                 report.append(json.dumps(stage_data, indent=2))
         

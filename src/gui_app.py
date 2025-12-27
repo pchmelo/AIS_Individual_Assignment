@@ -1820,6 +1820,61 @@ def view_results_page():
             # Display Stage 6 - Bias Mitigation results
             st.markdown("### Stage 6: Bias Mitigation Results")
             
+            # Parse agent analysis from report
+            report_file = os.path.join(report_dir, "evaluation_report.txt")
+            methods_analysis = {}
+            
+            if os.path.exists(report_file):
+                with open(report_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Look for 6_BIAS_MITIGATION section
+                if "6_BIAS_MITIGATION" in content:
+                    # Extract the entire bias mitigation section
+                    bias_start = content.find("\n\n6_BIAS_MITIGATION")
+                    if bias_start >= 0:
+                        # Find the end of this section (next major section or END OF REPORT)
+                        temp = content[bias_start:]
+                        end_markers = [
+                            temp.find("\n\n================================================================================\nEND OF REPORT"),
+                        ]
+                        end_markers = [m for m in end_markers if m > 0]
+                        
+                        if end_markers:
+                            bias_end = bias_start + min(end_markers)
+                            bias_section = content[bias_start:bias_end]
+                        else:
+                            bias_section = temp
+                        
+                        # Parse each method's analysis
+                        # Methods are marked with [METHOD_NAME]
+                        import re
+                        method_pattern = r'\[([A-Z][A-Z\s]+)\]\n-{40}'
+                        method_matches = list(re.finditer(method_pattern, bias_section))
+                        
+                        for i, match in enumerate(method_matches):
+                            method_name = match.group(1).strip()
+                            method_start = match.end()
+                            
+                            # Find the next method or end of section
+                            if i + 1 < len(method_matches):
+                                method_end = method_matches[i + 1].start()
+                            else:
+                                method_end = len(bias_section)
+                            
+                            method_content = bias_section[method_start:method_end]
+                            
+                            # Extract agent analysis
+                            if "[AGENT ANALYSIS]" in method_content:
+                                analysis_start = method_content.find("[AGENT ANALYSIS]") + len("[AGENT ANALYSIS]")
+                                analysis_text = method_content[analysis_start:].strip()
+                                
+                                # Clean up - remove any following section markers
+                                if "\n[" in analysis_text:
+                                    analysis_text = analysis_text[:analysis_text.find("\n[")].strip()
+                                
+                                methods_analysis[method_name] = analysis_text
+            
             # Check for generated CSV files
             generated_csv_dir = os.path.join(report_dir, "generated_csv")
             if os.path.exists(generated_csv_dir):
@@ -1895,6 +1950,21 @@ def view_results_page():
                                     
                                     st.markdown("##### Sample Data (First 5 Rows)")
                                     st.dataframe(df.head(), use_container_width=True)
+                                    
+                                    # Display agent analysis if available
+                                    method_upper = method.upper()
+                                    if method_upper in methods_analysis:
+                                        st.markdown("---")
+                                        st.markdown("##### Agent Analysis")
+                                        st.markdown(methods_analysis[method_upper])
+                                    elif "RANDOM OVERSAMPLING" in methods_analysis and method == "Random Oversampling":
+                                        st.markdown("---")
+                                        st.markdown("##### Agent Analysis")
+                                        st.markdown(methods_analysis["RANDOM OVERSAMPLING"])
+                                    elif "RANDOM UNDERSAMPLING" in methods_analysis and method == "Random Undersampling":
+                                        st.markdown("---")
+                                        st.markdown("##### Agent Analysis")
+                                        st.markdown(methods_analysis["RANDOM UNDERSAMPLING"])
                                     
                                     # Download button
                                     st.markdown("---")

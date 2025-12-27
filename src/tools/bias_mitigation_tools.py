@@ -12,11 +12,6 @@ warnings.simplefilter(action='ignore', category=Warning)
 
 
 class BiasMitigationTools(ToolManager):
-    """
-    Tools for bias mitigation in datasets.
-    Supports various techniques like reweighting, SMOTE, oversampling, and undersampling.
-    """
-    
     def __init__(self):
         super().__init__()
         
@@ -142,16 +137,12 @@ class BiasMitigationTools(ToolManager):
         self._build_tool_mappings()
     
     def _resolve_path(self, dataset_name: str) -> str:
-        """Resolve dataset path."""
         if not dataset_name.endswith('.csv'):
             dataset_name += '.csv'
         return os.path.join(self.data_dir, dataset_name)
     
     def apply_reweighting(self, dataset_name: str, target_column: str, 
                          sensitive_columns: list, output_dir: str) -> dict:
-        """
-        Apply reweighting to create sample weights based on sensitive attributes and target.
-        """
         try:
             path = self._resolve_path(dataset_name)
             df = pd.read_csv(path)
@@ -246,9 +237,6 @@ class BiasMitigationTools(ToolManager):
     
     def apply_smote(self, dataset_name: str, target_column: str, output_dir: str,
                    k_neighbors: int = 5, sampling_strategy: str = "auto") -> dict:
-        """
-        Apply SMOTE to generate synthetic samples for minority classes.
-        """
         try:
             path = self._resolve_path(dataset_name)
             df = pd.read_csv(path)
@@ -325,9 +313,6 @@ class BiasMitigationTools(ToolManager):
     
     def apply_oversampling(self, dataset_name: str, target_column: str, output_dir: str,
                           sampling_strategy: str = "auto") -> dict:
-        """
-        Apply random oversampling to duplicate minority class samples.
-        """
         try:
             path = self._resolve_path(dataset_name)
             df = pd.read_csv(path)
@@ -376,9 +361,6 @@ class BiasMitigationTools(ToolManager):
     
     def apply_undersampling(self, dataset_name: str, target_column: str, output_dir: str,
                            sampling_strategy: str = "auto") -> dict:
-        """
-        Apply random undersampling to reduce majority class samples.
-        """
         try:
             path = self._resolve_path(dataset_name)
             df = pd.read_csv(path)
@@ -427,9 +409,6 @@ class BiasMitigationTools(ToolManager):
     
     def compare_datasets(self, original_dataset: str, mitigated_dataset: str,
                         target_column: str, sensitive_columns: list) -> dict:
-        """
-        Compare original and mitigated datasets.
-        """
         try:
             # Load datasets
             orig_path = self._resolve_path(original_dataset)
