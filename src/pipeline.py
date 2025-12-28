@@ -10,6 +10,7 @@ from agents.conversational_agent import ConversationalAgent
 from agents.model_client import LocalModelClient, OpenRouterClient, GeminiClient
 from tools.fairness_tools import FairnessTools
 from tools.bias_mitigation_tools import BiasMitigationTools
+import pandas as pd
 
 
 class DatasetEvaluationPipeline:
@@ -118,7 +119,10 @@ class DatasetEvaluationPipeline:
         
         return None
     
-    def evaluate_dataset(self, user_prompt: str) -> Dict[str, Any]:
+    
+    def evaluate_dataset(self, user_prompt: str, confirmed_sensitive: list = None, 
+                        proxy_config: dict = None) -> Dict[str, Any]:
+
         dataset_name = self._extract_dataset_name(user_prompt)
         target_column = self._extract_target_column(user_prompt)
         print(f"Evaluating dataset: {dataset_name}")
@@ -173,14 +177,20 @@ class DatasetEvaluationPipeline:
         sensitive = self._stage_3_sensitive_detection(dataset_name, target_column)
         self.evaluation_results["stages"]["3_sensitive"] = sensitive
         
+        
+        # Override detected sensitive columns if confirmed list provided
+        if confirmed_sensitive:
+             print(f"\nUsing confirmed sensitive columns: {confirmed_sensitive}")
+             self.evaluation_results["stages"]["3_sensitive"]["sensitive_columns"] = confirmed_sensitive
+        
         print("\nSTAGE 4: Imbalance Analysis")
-        imbalance = self._stage_4_imbalance_analysis(dataset_name)
+        imbalance = self._stage_4_imbalance_analysis(dataset_name, proxy_config)
         self.evaluation_results["stages"]["4_imbalance"] = imbalance
         
         # Optional Stage 4.5: Target Fairness Analysis (only if target is specified)
         if target_column:
             print("\nSTAGE 4.5: Target Fairness Analysis")
-            target_fairness = self._stage_4_5_target_fairness_analysis(dataset_name, target_column)
+            target_fairness = self._stage_4_5_target_fairness_analysis(dataset_name, target_column, proxy_config=proxy_config)
             self.evaluation_results["stages"]["4_5_target_fairness"] = target_fairness
         
         print("\nSTAGE 5: Recommendations")
@@ -297,7 +307,7 @@ class DatasetEvaluationPipeline:
                                 List ALL sensitive columns - don't miss Race, Sex, Native-country if present.
                             """
         
-        sensitive_list = self.recommendation_agent.run(analysis_prompt, max_tokens=1536)
+        sensitive_list = self.recommendation_agent.run(analysis_prompt, max_tokens=4096)
         print(f"Sensitive columns identified ({len(sensitive_list)} chars)")
         print(f"Full response: {sensitive_list}")
         
@@ -321,7 +331,7 @@ class DatasetEvaluationPipeline:
             "sensitive_columns": identified_columns
         }
     
-    def _stage_4_imbalance_analysis(self, dataset_name: str) -> Dict[str, Any]:
+    def _stage_4_imbalance_analysis(self, dataset_name: str, proxy_config: dict = None) -> Dict[str, Any]:
         sensitive_cols = self.evaluation_results["stages"]["3_sensitive"].get("sensitive_columns", [])
         print(f"Analyzing imbalance for {len(sensitive_cols)} sensitive columns: {sensitive_cols}")
         
@@ -337,14 +347,56 @@ class DatasetEvaluationPipeline:
             tool_result["details"] = filtered_details
             tool_result["imbalanced_columns"] = len(filtered_details)
             print(f"Filtered to {len(filtered_details)} sensitive columns with imbalance")
+            
+        # Proxy Model Analysis if enabled
+        proxy_results = None
+        if proxy_config and proxy_config.get("enabled", False) and sensitive_cols and hasattr(self, 'target_column') and self.target_column:
+            print("\nRunning Proxy Model Analysis (Single Columns)...")
+            print(f"Config: {proxy_config}")
+            proxy_results = self.fairness_tools.train_and_evaluate_proxy_model(
+                dataset_name=dataset_name,
+                target_column=self.target_column,
+                sensitive_columns=sensitive_cols,
+                test_size=proxy_config.get("test_size", 0.25),
+                model_type=proxy_config.get("model_type", "Random Forest"),
+                model_params=proxy_config.get("model_params", {})
+            )
+            print(f"Proxy Analysis Complete: {proxy_results.get('status')}")
         
         print("\nAgent analyzing imbalance in SENSITIVE columns only...")
+        # Add proxy results to prompt if available
+        proxy_context = ""
+        if proxy_results and proxy_results.get("status") == "success":
+            # Format per-label metrics if available
+            per_label_str = ""
+            if 'per_label_metrics' in proxy_results.get('performance', {}):
+                per_label_str = "\nPer-Label Performance (F1, Precision, Recall):\n" + json.dumps(proxy_results['performance']['per_label_metrics'], indent=2)
+
+            proxy_context = f"""
+            PROXY MODEL FAIRNESS ANALYSIS:
+            Model: {proxy_results.get('model_type')} (Acc: {proxy_results['performance']['accuracy']}, F1: {proxy_results['performance']['f1_macro']})
+            
+            {per_label_str}
+
+            Fairness Metrics per Attribute (F1 Score & Disparity):
+            {json.dumps(proxy_results.get('fairness_analysis', {}), indent=2)}
+            
+            Include these metrics (Statistical Parity, Disparate Impact, Group F1, FNR/FPR Ratios) in your assessment.
+            
+            CRITICAL ANALYSIS REQUIREMENTS:
+            1. Compare "Base Rate" (Actual % Positive) vs "Selection Rate" (Predicted % Positive) for each group.
+            2. High FNR (False Negative Rate) in a protected group means the model fails to select qualified candidates from that group. Highlight this.
+            3. Calculate and mention the "FNR Ratio" (Max FNR / Min FNR) if significant disparity exists.
+            4. Identify if the model *amplifies* existing bias (e.g. if Selection Rate disparity > Base Rate disparity).
+            """
+
         analysis_prompt = f"""Analyze class imbalance in SENSITIVE/PROTECTED attributes ONLY.
 
                                 SENSITIVE COLUMNS IDENTIFIED: {', '.join(sensitive_cols)}
 
                                 IMBALANCE DATA (for sensitive columns only):
                                 {json.dumps(tool_result, indent=2)}
+                                {proxy_context}
 
                                 Provide:
                                 1. Summary of imbalance severity for each sensitive column
@@ -361,11 +413,14 @@ class DatasetEvaluationPipeline:
         return {
             "tool_used": "check_class_imbalance",
             "tool_result": tool_result,
+            "proxy_model_results": proxy_results,
+            "baseline_fairness_metrics": proxy_results,  # Store for comparison in Stage 6
             "agent_analysis": analysis,
             "analyzed_columns": sensitive_cols
         }
     
-    def _stage_4_5_target_fairness_analysis(self, dataset_name: str, target_column: str, selected_pairs: list = None) -> Dict[str, Any]:
+    def _stage_4_5_target_fairness_analysis(self, dataset_name: str, target_column: str, selected_pairs: list = None,
+                                          proxy_config: dict = None) -> Dict[str, Any]:
         sensitive_cols = self.evaluation_results["stages"]["3_sensitive"].get("sensitive_columns", [])
         
         # Ensure target column is not in sensitive columns (double-check)
@@ -401,14 +456,67 @@ class DatasetEvaluationPipeline:
             print(f"Images saved to: {self.images_dir}")
         else:
             print(f"Tool result: {tool_result}")
+            
+        intersectional_proxy_results = None
+        if proxy_config and proxy_config.get("enabled", False) and selected_pairs:
+            try:
+                path = self.fairness_tools._resolve_path(dataset_name)
+                df = pd.read_csv(path)
+                
+                temp_cols = []
+                for pair in selected_pairs:
+                    # pair is list of 2 columns
+                    col1, col2 = pair[0], pair[1]
+                    if col1 in df.columns and col2 in df.columns:
+                        combined_name = f"{col1}_{col2}_combined"
+                        df[combined_name] = df[col1].astype(str) + "_" + df[col2].astype(str)
+                        temp_cols.append(combined_name)
+                
+                if temp_cols:
+                    temp_filename = f"temp_intersectional_{datetime.now().strftime('%H%M%S')}.csv"
+                    temp_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", temp_filename)
+                    df.to_csv(temp_path, index=False)
+                    
+                    print(f"Running Proxy Model Intersectional Analysis on {temp_cols}...")
+                    intersectional_proxy_results = self.fairness_tools.train_and_evaluate_proxy_model(
+                        dataset_name=temp_filename.replace(".csv", ""),
+                        target_column=target_column,
+                        sensitive_columns=temp_cols,
+                        test_size=proxy_config.get("test_size", 0.25),
+                        model_type=proxy_config.get("model_type", "Random Forest"),
+                        model_params=proxy_config.get("model_params", {})
+                    )
+                    
+                    # Cleanup
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+            except Exception as e:
+                print(f"Intersectional proxy analysis failed: {e}")
+
         
         print("\nAgent analyzing target fairness results...")
+        proxy_context = ""
+        if intersectional_proxy_results and intersectional_proxy_results.get("status") == "success":
+            proxy_context = f"""
+            INTERSECTIONAL PROXY MODEL METRICS:
+            (Model: {intersectional_proxy_results.get('model_type')})
+            
+            Fairness Metrics for Combined Groups (Intersectional):
+            {json.dumps(intersectional_proxy_results.get('fairness_analysis', {}), indent=2)}
+            
+            CRITICAL ANALYSIS REQUIREMENTS:
+            1. Analyze "F1 Score" for each intersectional group. Identify which SPECIFIC combination (e.g. Black Female) has the lowest performance.
+            2. Compare "Base Rate" vs "Selection Rate".
+            3. Highlight FNR Disparities. Are certain combinations being systematically rejected (High FNR)?
+            """
+
         analysis_prompt = f"""Analyze the target fairness metrics for '{target_column}' across sensitive attributes.
 
                                 SENSITIVE COLUMNS ANALYZED: {', '.join(sensitive_cols)}
 
                                 FAIRNESS METRICS DATA:
                                 {json.dumps(tool_result, indent=2)}
+                                {proxy_context}
 
                                 Provide analysis on:
                                 1. Target distribution across different demographic groups
@@ -427,6 +535,7 @@ class DatasetEvaluationPipeline:
         return {
             "tool_used": "analyze_target_fairness",
             "tool_result": tool_result,
+            "intersectional_proxy_results": intersectional_proxy_results,
             "agent_analysis": analysis,
             "target_column": target_column,
             "analyzed_sensitive_columns": sensitive_cols
@@ -524,12 +633,24 @@ class DatasetEvaluationPipeline:
                             report.append("\n[MITIGATION RESULTS]")
                             report.append(json.dumps(mitigation_result, indent=2))
                         
-                        # Comparison results
-                        comparison_result = method_result.get("comparison_result", {})
+                        # Comparison results - Check top level first, then inside mitigation_result
+                        comparison_result = method_result.get("comparison_result")
+                        if not comparison_result and mitigation_result:
+                            comparison_result = mitigation_result.get("comparison_result")
+                            
                         if comparison_result:
                             report.append("\n[COMPARISON RESULTS]")
                             comparison_without_analysis = {k: v for k, v in comparison_result.items() if k != "agent_analysis"}
                             report.append(json.dumps(comparison_without_analysis, indent=2))
+                        
+                        # Fairness comparison results - Check top level first, then inside mitigation_result
+                        fairness_comparison = method_result.get("fairness_comparison")
+                        if not fairness_comparison and mitigation_result:
+                            fairness_comparison = mitigation_result.get("fairness_comparison")
+                            
+                        if fairness_comparison and fairness_comparison.get("status") != "error":
+                            report.append("\n\n[FAIRNESS COMPARISON]")
+                            report.append(json.dumps(fairness_comparison, indent=2))
                         
                         # Agent analysis for this method
                         agent_analysis = comparison_result.get("agent_analysis")
@@ -547,6 +668,16 @@ class DatasetEvaluationPipeline:
                     if "tool_result" in stage_data:
                         report.append("\n[TOOL RESULT]")
                         report.append(json.dumps(stage_data["tool_result"], indent=2))
+                    
+                    # Include proxy model results for Stage 4
+                    if "proxy_model_results" in stage_data:
+                        report.append("\n\n[PROXY MODEL RESULTS]")
+                        report.append(json.dumps(stage_data["proxy_model_results"], indent=2))
+                    
+                    # Include intersectional proxy results for Stage 4.5
+                    if "intersectional_proxy_results" in stage_data:
+                        report.append("\n\n[INTERSECTIONAL PROXY RESULTS]")
+                        report.append(json.dumps(stage_data["intersectional_proxy_results"], indent=2))
                     
                     if "agent_analysis" in stage_data:
                         report.append("\n\n[AGENT ANALYSIS]")
@@ -660,18 +791,7 @@ class DatasetEvaluationPipeline:
     
     def apply_bias_mitigation(self, method: str, dataset_name: str, target_column: str,
                              sensitive_columns: list = None, **kwargs) -> Dict[str, Any]:
-        """
-        Apply bias mitigation technique to the dataset.
-        
-        Args:
-            method: One of 'reweighting', 'smote', 'oversampling', 'undersampling'
-            dataset_name: Name of the dataset
-            target_column: Target column name
-            sensitive_columns: List of sensitive columns (required for reweighting)
-            **kwargs: Additional parameters for specific methods
-        """
         try:
-            # Create generated_csv directory in report folder
             output_dir = os.path.join(self.report_dir, "generated_csv")
             os.makedirs(output_dir, exist_ok=True)
             
@@ -715,6 +835,76 @@ class DatasetEvaluationPipeline:
             else:
                 return {"status": "error", "message": f"Unknown method: {method}"}
             
+            # Run fairness comparison if baseline metrics are available and mitigation succeeded
+            if result.get("status") == "success" and result.get("output_file"):
+                print(f"\n{'='*60}")
+                print(f"FAIRNESS COMPARISON DEBUG for {method}")
+                print(f"{'='*60}")
+                
+                # Get baseline metrics from Stage 4
+                baseline_metrics = self.evaluation_results.get("stages", {}).get("4_imbalance", {}).get("baseline_fairness_metrics")
+                
+                print(f"Baseline metrics found: {baseline_metrics is not None}")
+                if baseline_metrics:
+                    print(f"Baseline status: {baseline_metrics.get('status')}")
+                
+                if baseline_metrics and baseline_metrics.get("status") == "success":
+                    # Extract filename (full path)
+                    output_file = result.get("output_file", "")
+                    if output_file.endswith(".csv"):
+                        csv_filename = output_file  # Use full path!
+                    else:
+                        csv_filename = output_file
+                    
+                    print(f"Mitigated CSV filename: {csv_filename}")
+                    
+                    # Get proxy config from kwargs or use defaults
+                    proxy_config = kwargs.get("proxy_config", {
+                        "test_size": 0.25,
+                        "model_type": "Random Forest",
+                        "model_params": {}
+                    })
+                    
+                    # Get sensitive columns from Stage 4
+                    analyzed_columns = self.evaluation_results.get("stages", {}).get("4_imbalance", {}).get("analyzed_columns", [])
+                    
+                    print(f"Analyzed columns: {analyzed_columns}")
+                    print(f"Target column: {target_column}")
+                    
+                    if analyzed_columns and target_column:
+                        print(f"\n✓ Running fairness comparison for {method}...")
+                        
+                        # Run proxy model on mitigated dataset
+                        mitigated_metrics = self._run_proxy_on_mitigated_dataset(
+                            csv_filename=csv_filename,
+                            target_column=target_column,
+                            sensitive_columns=analyzed_columns,
+                            proxy_config=proxy_config
+                        )
+                        
+                        print(f"Mitigated metrics status: {mitigated_metrics.get('status')}")
+                        
+                        if mitigated_metrics.get("status") == "success":
+                            # Compare metrics
+                            comparison = self._compare_fairness_metrics(
+                                baseline=baseline_metrics,
+                                mitigated=mitigated_metrics,
+                                method_name=method
+                            )
+                            
+                            result["fairness_comparison"] = comparison
+                            print(f"✓ Fairness comparison complete: {comparison.get('overall_improvement', 'Unknown')} improvement")
+                            print(f"{'='*60}\n")
+                        else:
+                            print(f"✗ Could not run proxy model on mitigated dataset: {mitigated_metrics.get('message', 'Unknown error')}")
+                            print(f"{'='*60}\n")
+                    else:
+                        print(f"✗ Skipping fairness comparison: missing sensitive columns or target column")
+                        print(f"{'='*60}\n")
+                else:
+                    print(f"✗ Skipping fairness comparison: no baseline metrics available from Stage 4")
+                    print(f"{'='*60}\n")
+            
             return result
             
         except Exception as e:
@@ -722,9 +912,6 @@ class DatasetEvaluationPipeline:
     
     def compare_mitigation_results(self, original_dataset: str, mitigated_dataset: str,
                                    target_column: str, sensitive_columns: list) -> Dict[str, Any]:
-        """
-        Compare original and mitigated datasets.
-        """
         try:
             print("\nComparing original and mitigated datasets...")
             result = self.bias_mitigation_tools.compare_datasets(
@@ -754,6 +941,106 @@ class DatasetEvaluationPipeline:
             return result
             
         except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    def _run_proxy_on_mitigated_dataset(self, csv_filename: str, target_column: str,
+                                        sensitive_columns: list, proxy_config: dict = None) -> Dict[str, Any]:
+        try:
+            if proxy_config is None:
+                proxy_config = {
+                    "test_size": 0.25,
+                    "model_type": "Random Forest",
+                    "model_params": {}
+                }
+            
+            print(f"\nRunning proxy model on mitigated dataset: {csv_filename}")
+            proxy_results = self.fairness_tools.train_and_evaluate_proxy_model(
+                dataset_name=csv_filename,
+                target_column=target_column,
+                sensitive_columns=sensitive_columns,
+                test_size=proxy_config.get("test_size", 0.25),
+                model_type=proxy_config.get("model_type", "Random Forest"),
+                model_params=proxy_config.get("model_params", {})
+            )
+            
+            return proxy_results
+            
+        except Exception as e:
+            print(f"Error running proxy model on mitigated dataset: {e}")
+            return {"status": "error", "message": str(e)}
+    
+    def _compare_fairness_metrics(self, baseline: dict, mitigated: dict, method_name: str) -> Dict[str, Any]:
+        try:
+            if not baseline or baseline.get("status") != "success":
+                return {"status": "error", "message": "Invalid baseline metrics"}
+            
+            if not mitigated or mitigated.get("status") != "success":
+                return {"status": "error", "message": "Invalid mitigated metrics"}
+            
+            comparison = {
+                "method": method_name,
+                "baseline_metrics": baseline,
+                "mitigated_metrics": mitigated,
+                "improvements": {},
+                "per_attribute_comparison": {}
+            }
+            
+            # Compare fairness metrics for each sensitive attribute
+            baseline_fairness = baseline.get("fairness_analysis", {})
+            mitigated_fairness = mitigated.get("fairness_analysis", {})
+            
+            for attr in baseline_fairness.keys():
+                if attr not in mitigated_fairness:
+                    continue
+                
+                baseline_metrics = baseline_fairness[attr].get("metrics", {})
+                mitigated_metrics = mitigated_fairness[attr].get("metrics", {})
+                
+                # Calculate improvements
+                spd_baseline = baseline_metrics.get("statistical_parity_difference", 0)
+                spd_mitigated = mitigated_metrics.get("statistical_parity_difference", 0)
+                spd_improvement = spd_baseline - spd_mitigated  # Positive = improvement (closer to 0)
+                
+                di_baseline = baseline_metrics.get("disparate_impact", 0)
+                di_mitigated = mitigated_metrics.get("disparate_impact", 0)
+                di_improvement = di_mitigated - di_baseline  # Positive = improvement (closer to 1)
+                
+                comparison["per_attribute_comparison"][attr] = {
+                    "statistical_parity_difference": {
+                        "baseline": float(spd_baseline),  # Ensure float
+                        "mitigated": float(spd_mitigated),
+                        "change": float(spd_improvement),
+                        "improved": bool(abs(spd_mitigated) < abs(spd_baseline))  # Cast to standard bool
+                    },
+                    "disparate_impact": {
+                        "baseline": float(di_baseline),
+                        "mitigated": float(di_mitigated),
+                        "change": float(di_improvement),
+                        "improved": bool(abs(1.0 - di_mitigated) < abs(1.0 - di_baseline))  # Cast to standard bool
+                    }
+                }
+            
+            # Overall improvement assessment
+            improvements_count = sum(
+                1 for attr_comp in comparison["per_attribute_comparison"].values()
+                if attr_comp["statistical_parity_difference"]["improved"] or 
+                   attr_comp["disparate_impact"]["improved"]
+            )
+            total_metrics = len(comparison["per_attribute_comparison"]) * 2
+            
+            if improvements_count > total_metrics * 0.6:
+                comparison["overall_improvement"] = "Significant"
+            elif improvements_count > total_metrics * 0.3:
+                comparison["overall_improvement"] = "Moderate"
+            elif improvements_count > 0:
+                comparison["overall_improvement"] = "Minor"
+            else:
+                comparison["overall_improvement"] = "None or Negative"
+            
+            return comparison
+            
+        except Exception as e:
+            print(f"Error comparing fairness metrics: {e}")
             return {"status": "error", "message": str(e)}
     
     def get_summary(self) -> Dict[str, Any]:

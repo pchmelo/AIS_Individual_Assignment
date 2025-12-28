@@ -162,29 +162,43 @@ class BiasMitigationTools(ToolManager):
                 group_col = "combined_group"
                 df[group_col] = df[sensitive_columns].astype(str).agg('_'.join, axis=1)
             
-            # Compute sample weights
-            # Weight formula: w(g,y) = P(G=g) * P(Y=y) / P(G=g, Y=y)
-            weights = []
-            for idx, row in df.iterrows():
-                group = row[group_col]
-                target = row[target_column]
-                
-                # P(G=g)
-                p_group = (df[group_col] == group).sum() / len(df)
-                # P(Y=y)
-                p_target = (df[target_column] == target).sum() / len(df)
-                # P(G=g, Y=y)
-                p_both = ((df[group_col] == group) & (df[target_column] == target)).sum() / len(df)
-                
-                # Calculate weight
-                if p_both > 0:
-                    weight = (p_group * p_target) / p_both
-                else:
-                    weight = 1.0
-                
-                weights.append(weight)
+            # Optimized Weight Calculation (Vectorized)
+            # Goal: Balance target classes AND ensure fairness (independence of group and target)
+            # Formula: W(g,y) = (Count(g) / Num_Classes) / Count(g,y)
+            # This ensures:
+            # 1. Total weight of class y = Total samples / Num_Classes (Balanced Classes)
+            # 2. Total weight of group g = Count(g) (Preserved Group Distribution)
             
-            df['sample_weight'] = weights
+            # Calculate counts
+            g_counts = df[group_col].value_counts()
+            gy_counts = df.groupby([group_col, target_column]).size()
+            num_classes = df[target_column].nunique()
+            
+            # Create a mapping for weights
+            # We map (group, target) -> weight
+            weights_map = {}
+            for group_val in g_counts.index:
+                for target_val in df[target_column].unique():
+                    try:
+                        count_gy = gy_counts.loc[(group_val, target_val)]
+                    except KeyError:
+                        count_gy = 0
+                    
+                    if count_gy > 0:
+                        count_g = g_counts[group_val]
+                        # W = (Ng / Nclasses) / Ngy
+                        weight = (count_g / num_classes) / count_gy
+                    else:
+                        weight = 1.0 # Fallback for empty intersections
+                    
+                    weights_map[(group_val, target_val)] = weight
+            
+            # Apply weights
+            # Using list comprehension for speed optimization over apply(axis=1)
+            df['sample_weight'] = [
+                weights_map.get((g, t), 1.0) 
+                for g, t in zip(df[group_col], df[target_column])
+            ]
             
             # Save the weighted dataset
             os.makedirs(output_dir, exist_ok=True)
@@ -193,6 +207,7 @@ class BiasMitigationTools(ToolManager):
             df.to_csv(output_path, index=False)
             
             # Compute statistics
+            weights = df['sample_weight']
             weight_stats = {
                 "min": float(np.min(weights)),
                 "max": float(np.max(weights)),
@@ -220,7 +235,7 @@ class BiasMitigationTools(ToolManager):
             
             return {
                 "status": "success",
-                "method": "Reweighting",
+                "method": "Reweighting (Balanced + Fair)",
                 "output_file": output_path,
                 "original_rows": len(df),
                 "new_rows": len(df),  # Same number of rows
@@ -229,11 +244,11 @@ class BiasMitigationTools(ToolManager):
                 "distribution_after": weighted_dist,  # Weighted effective counts
                 "weighted_imbalance_ratio": round(weighted_ratio, 2),
                 "sensitive_columns_used": sensitive_columns,
-                "note": "Sample weights added as 'sample_weight' column. Distribution_after shows weighted effective counts. Use these weights during model training."
+                "note": "Sample weights added as 'sample_weight' column. Weights calculated to balance target classes while preserving sensitive group distribution."
             }
             
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            return {"status": "error", "message": f"Error in reweighting: {str(e)}"}
     
     def apply_smote(self, dataset_name: str, target_column: str, output_dir: str,
                    k_neighbors: int = 5, sampling_strategy: str = "auto") -> dict:

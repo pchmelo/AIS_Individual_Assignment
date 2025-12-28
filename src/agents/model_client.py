@@ -35,7 +35,7 @@ class LocalModelClient(BaseModelClient):
         )
         print(f"Local model loaded: {model_name}")
     
-    def generate(self, messages: List[Dict[str, str]], temperature: float = 0.2, max_tokens: int = 2048) -> str:
+    def generate(self, messages: List[Dict[str, str]], temperature: float = 0.2, max_tokens: int = 4096) -> str:
         prompt = self._build_prompt(messages)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
 

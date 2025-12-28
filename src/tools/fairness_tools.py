@@ -6,6 +6,14 @@ from tools.tool import Tool
 from tools.tool_manager import ToolManager
 import os
 import warnings
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classification_report
+from sklearn.preprocessing import LabelEncoder
+from itertools import combinations as iter_combinations
+
 warnings.simplefilter(action='ignore', category=Warning)
 
 class FairnessTools(ToolManager):    
@@ -108,6 +116,24 @@ class FairnessTools(ToolManager):
                 "required": ["dataset_name", "target_column", "sensitive_columns", "output_dir"]
             }
         )
+
+        self.tool_proxy_model_analysis = Tool(
+            name="train_and_evaluate_proxy_model",
+            function=self.train_and_evaluate_proxy_model,
+            description="Train a proxy model to evaluate performance (F1 Score) and fairness metrics.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "dataset_name": {"type": "string", "description": "Name of the dataset"},
+                    "target_column": {"type": "string", "description": "Target variable"},
+                    "sensitive_columns": {"type": "array", "items": {"type": "string"}, "description": "List of sensitive columns"},
+                    "test_size": {"type": "number", "description": "Test set size fraction (default 0.25)"},
+                    "model_type": {"type": "string", "description": "Model type (Random Forest, Logistic Regression, etc.)"},
+                    "model_params": {"type": "object", "description": "Model hyperparameters"}
+                },
+                "required": ["dataset_name", "target_column"]
+            }
+        )
         
         self.list_of_tools = [
             self.tool_load_dataset,
@@ -116,7 +142,8 @@ class FairnessTools(ToolManager):
             self.tool_detect_sensitive,
             self.tool_analyze_sensitive,
             self.tool_check_imbalance,
-            self.tool_fairness_analysis
+            self.tool_fairness_analysis,
+            self.tool_proxy_model_analysis
         ]
         self._build_tool_mappings()
     
@@ -462,6 +489,13 @@ class FairnessTools(ToolManager):
         try:
             path = self._resolve_path(dataset_name)
             
+            if output_dir:
+                 os.makedirs(output_dir, exist_ok=True)
+            else:
+                 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                 output_dir = os.path.join(base_dir, "reports", "fairness_images")
+                 os.makedirs(output_dir, exist_ok=True)
+            
             na_values = ['?', 'NA', 'N/A', 'n/a', 'na', 'NULL', 'null', 'None', 'none', 
                         '', ' ', 'NaN', 'nan', '--', '..', 'missing', 'Missing', 
                         'unknown', 'Unknown', 'UNKNOWN', 'undefined', 'Undefined']
@@ -602,19 +636,14 @@ class FairnessTools(ToolManager):
                 result["target_rates_by_group"][sensitive_col] = group_target_rates
             
             # 5. Combined sensitive groups analysis - Generate for selected pairs only
-            if len(sensitive_columns) >= 2:
-                from itertools import combinations as iter_combinations
-                
-                # Use selected pairs if provided, otherwise generate all possible pairs
+            if len(sensitive_columns) >= 2:                
                 if selected_pairs:
-                    # Filter to ensure both columns exist in the dataframe
                     sensitive_pairs = [
                         (col1, col2) for col1, col2 in selected_pairs 
                         if col1 in df.columns and col2 in df.columns
                     ]
                     print(f"Generating combinations for {len(sensitive_pairs)} user-selected pairs")
                 else:
-                    # Generate all possible pairs
                     sensitive_pairs = list(iter_combinations(sensitive_columns, 2))
                     print(f"Generating combinations for all {len(sensitive_pairs)} possible pairs")
                 
@@ -800,3 +829,213 @@ class FairnessTools(ToolManager):
             return {"status": "error", "message": str(e)}
         except Exception as e:
             return {"status": "error", "message": str(e)}
+
+    def train_and_evaluate_proxy_model(self, dataset_name: str, target_column: str, 
+                                     sensitive_columns: list = None, test_size: float = 0.25,
+                                     model_type: str = "Random Forest", model_params: dict = None) -> dict:
+        try:
+            path = self._resolve_path(dataset_name)
+            
+            # Load and preprocess
+            na_values = ['?', 'NA', 'N/A', 'n/a', 'na', 'NULL', 'null', 'None', 'none', 
+                        '', ' ', 'NaN', 'nan', '--', '..', 'missing', 'Missing', 
+                        'unknown', 'Unknown', 'UNKNOWN', 'undefined', 'Undefined']
+            
+            df = pd.read_csv(path, na_values=na_values, keep_default_na=True)
+            
+            if target_column not in df.columns:
+                return {"status": "error", "message": f"Target column '{target_column}' not found"}
+            
+            # Handle minimal preprocessing for the proxy model
+            # 1. Drop rows with target NaN
+            df = df.dropna(subset=[target_column])
+            
+            # 2. Separate X and y
+            X = df.drop(columns=[target_column])
+            y = df[target_column]
+            
+            # 3. Encode categorical features and target
+            # Strategy: Keep X_raw for analysis indices, X_encoded for training.
+            X_raw = X.copy()
+            
+            # Simple encoding: Label Encoding for all object columns
+            le_dict = {}
+            for col in X.select_dtypes(include=['object', 'category']).columns:
+                le = LabelEncoder()
+                # Handle NaNs in categorical columns by treating as "Missing" category
+                X[col] = X[col].fillna("Missing").astype(str)
+                X[col] = le.fit_transform(X[col])
+                le_dict[col] = le
+            
+            # Handle NaNs in numeric columns (simple fill with median)
+            for col in X.select_dtypes(include=['int64', 'float64']).columns:
+                X[col] = X[col].fillna(X[col].median())
+                
+            # Encode target
+            le_target = LabelEncoder()
+            y = le_target.fit_transform(y.astype(str))
+            
+            # Identify positive class index (usually 1, or the second class)
+            positive_label_idx = 1 if len(le_target.classes_) > 1 else 0
+            positive_class_name = le_target.classes_[positive_label_idx]
+            
+            # Split data
+            X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
+                X, y, df.index, test_size=test_size, random_state=42
+            )
+            
+            X_test_raw = df.loc[idx_test].drop(columns=[target_column])
+            
+            # Initialize Model
+            model_params = model_params or {}
+            
+            if model_type == "Logistic Regression":
+                model = LogisticRegression(random_state=42, max_iter=1000, **model_params)
+            elif model_type == "Gradient Boosting":
+                model = GradientBoostingClassifier(random_state=42, **model_params)
+            elif model_type == "SVM":
+                model = SVC(random_state=42, probability=True, **model_params)
+            else: # Default Random Forest
+                model = RandomForestClassifier(random_state=42, **model_params)
+            
+            # Train
+            model.fit(X_train, y_train)
+            
+            # Predict
+            y_pred = model.predict(X_test)
+            
+            # Global Metrics
+            acc = accuracy_score(y_test, y_pred)
+            f1_macro = f1_score(y_test, y_pred, average='macro')
+            f1_weighted = f1_score(y_test, y_pred, average='weighted')
+            try:
+                conf_matrix = confusion_matrix(y_test, y_pred).tolist()
+            except:
+                conf_matrix = []
+            
+            result = {
+                "status": "success",
+                "model_type": model_type,
+                "test_size": test_size,
+                "dataset_size": len(df),
+                "test_samples": len(y_test),
+                "performance": {
+                    "accuracy": round(acc, 4),
+                    "f1_macro": round(f1_macro, 4),
+                    "f1_weighted": round(f1_weighted, 4),
+                    "confusion_matrix": conf_matrix,
+                    "per_label_metrics": classification_report(y_test, y_pred, output_dict=True)
+                },
+                "fairness_analysis": {},
+                "positive_class": str(positive_class_name)
+            }
+            
+            # Fairness Analysis
+            if sensitive_columns:
+                fairness_results = {}
+                
+                for sens_col in sensitive_columns:
+                    # Check if column exists in raw data (it might have been dropped or renamed, though unlikely with X_raw)
+                    if sens_col not in X_test_raw.columns:
+                        continue
+                        
+                    # Get groups from raw test data
+                    groups = X_test_raw[sens_col].fillna("Missing").astype(str)
+                    unique_groups = groups.unique()
+                    
+                    group_metrics = {}
+                    positive_rates = {}
+                    
+                    for group in unique_groups:
+                        mask = (groups == group)
+                        if mask.sum() == 0:
+                            continue
+                            
+                        y_test_g = y_test[mask]
+                        y_pred_g = y_pred[mask]
+                        
+                        # Performance per group
+                        g_acc = accuracy_score(y_test_g, y_pred_g)
+                        g_f1 = f1_score(y_test_g, y_pred_g, average='macro', zero_division=0)
+                        
+                        # Selection Rate / Positive Rate: P(Predicted = 1 | Group)
+                        pred_pos_count = (y_pred_g == positive_label_idx).sum()
+                        total_count = len(y_pred_g)
+                        pos_rate = pred_pos_count / total_count if total_count > 0 else 0
+                        
+                        # Base Rate: P(Actual = 1 | Group)
+                        actual_pos_count = (y_test_g == positive_label_idx).sum()
+                        base_rate = actual_pos_count / total_count if total_count > 0 else 0
+                        
+                        # Confusion Matrix Elements for this group (Binary vs Rest)
+                        # We use the positive_label_idx as the "Positive" class
+                        y_test_g_binary = (y_test_g == positive_label_idx).astype(int)
+                        y_pred_g_binary = (y_pred_g == positive_label_idx).astype(int)
+                        
+                        try:
+                            # For binary classification (0/1)
+                            tn, fp, fn, tp = confusion_matrix(y_test_g_binary, y_pred_g_binary, labels=[0, 1]).ravel()
+                            
+                            tpr = tp / (tp + fn) if (tp + fn) > 0 else 0  # Recall, Sensitivity
+                            tnr = tn / (tn + fp) if (tn + fp) > 0 else 0  # Specificity
+                            fpr = fp / (fp + tn) if (fp + tn) > 0 else 0  # False Positive Rate
+                            fnr = fn / (fn + tp) if (fn + tp) > 0 else 0  # False Negative Rate
+                        except Exception:
+                            # Fallback if something goes wrong
+                            tn = fp = fn = tp = 0
+                            tpr = tnr = fpr = fnr = 0
+
+                        group_metrics[str(group)] = {
+                            "accuracy": round(g_acc, 4),
+                            "f1_macro": round(g_f1, 4),
+                            "positive_rate": round(pos_rate, 4),
+                            "base_rate": round(base_rate, 4),
+                            "count": int(total_count),
+                            "tpr": round(tpr, 4),
+                            "tnr": round(tnr, 4),
+                            "fpr": round(fpr, 4),
+                            "fnr": round(fnr, 4),
+                            "tp": int(tp),
+                            "fp": int(fp), 
+                            "tn": int(tn),
+                            "fn": int(fn)
+                        }
+                        positive_rates[str(group)] = pos_rate
+                    
+                    # Calculate Fairness Metrics
+                    rates_list = list(positive_rates.values())
+                    if rates_list:
+                        max_rate = max(rates_list)
+                        min_rate = min(rates_list)
+                        
+                        # Statistical Parity Difference (Max Difference)
+                        spd = max_rate - min_rate
+                        
+                        # Disparate Impact (Min / Max ratio)
+                        # Use minimum non-zero rate to avoid DI = 0 when some groups have 0% selection
+                        non_zero_rates = [r for r in rates_list if r > 0]
+                        if non_zero_rates and max_rate > 0:
+                            min_non_zero_rate = min(non_zero_rates)
+                            di = min_non_zero_rate / max_rate
+                        else:
+                            di = 0.0
+                    else:
+                        spd = 0.0
+                        di = 0.0
+                    
+                    fairness_results[sens_col] = {
+                        "groups": group_metrics,
+                        "metrics": {
+                            "statistical_parity_difference": round(spd, 4),
+                            "disparate_impact": round(di, 4),
+                            "max_positive_rate_group": max(positive_rates, key=positive_rates.get) if positive_rates else "N/A",
+                            "min_positive_rate_group": min(positive_rates, key=positive_rates.get) if positive_rates else "N/A"
+                        }
+                    }
+                
+                result["fairness_analysis"] = fairness_results
+            
+            return result
+            
+        except Exception as e:
+            return {"status": "error", "message": f"Proxy model error: {str(e)}"}

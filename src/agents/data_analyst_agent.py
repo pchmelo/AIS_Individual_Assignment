@@ -27,7 +27,7 @@ class DataAnalystAgent(BaseAgent):
             {"role": "user", "content": user_message}
         ]
         
-        model_reply = self.ask_model(messages, max_tokens=512)
+        model_reply = self.ask_model(messages, max_tokens=4096)
         
         try:
             tool_name, args = self.tool_manager.parse_function_call(model_reply)
