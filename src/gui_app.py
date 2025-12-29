@@ -269,7 +269,7 @@ def display_quality_results(tool_result):
             
             if issues_data:
                 df_issues = pd.DataFrame(issues_data)
-                st.dataframe(df_issues, use_container_width=True)
+                st.dataframe(df_issues, width='stretch')
 
 def display_sensitive_results(stage_data):
     tool_result = stage_data.get("tool_result", {})
@@ -322,7 +322,7 @@ def display_imbalance_results(tool_result):
                             {"Value": k, "Percentage": v} 
                             for k, v in detail["distribution"].items()
                         ])
-                        st.dataframe(dist_df, width='stretch')
+                        st.dataframe(dist_df, width='stretch', hide_index=True)
 
 def display_fairness_results(stage_data):
     tool_result = stage_data.get("tool_result", {})
@@ -365,7 +365,7 @@ def display_fairness_results(stage_data):
                              st.dataframe(
                                  display_df, 
                                  hide_index=True,
-                                 use_container_width=True,
+                                 width='stretch',
                                  column_config={
                                      "Group": st.column_config.TextColumn("Group", width="medium"),
                                      "Count": st.column_config.NumberColumn("Count", format="%d"),
@@ -415,7 +415,7 @@ def display_fairness_results(stage_data):
             )
             
             if selected_viz != "None":
-                st.image(image_options[selected_viz], caption=selected_viz, use_container_width=True)
+                st.image(image_options[selected_viz], caption=selected_viz, width='stretch')
 
 def main_page():
     st.markdown("<div class='main-header'>Dataset Quality & Fairness Evaluation System</div>", 
@@ -650,11 +650,12 @@ def display_pipeline_stepwise():
                  st.session_state.stage_4_confirmed = False
 
              if not st.session_state.stage_4_confirmed:
-                 if st.button("Confirm & Run Analysis", type="primary"):
-                     st.session_state.stage_4_confirmed = True
-                     st.rerun()
-                 else:
-                     return # Stop here until confirmed
+                 col1, col2, col3 = st.columns([2, 1, 1])
+                 with col3:
+                     if st.button("Confirm & Run Analysis", type="primary", key="confirm_stage_4", use_container_width=True):
+                         st.session_state.stage_4_confirmed = True
+                         st.rerun()
+                 return # Stop here until confirmed
              else:
                   # Optionally show a message that it's confirmed/running
                   st.info("Configuration confirmed. Running analysis...")
@@ -767,14 +768,14 @@ def display_pipeline_stepwise():
                 st.markdown("---")
                 st.markdown("**Would you like to apply bias mitigation techniques to fix imbalances?**")
                 
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    if st.button("Yes, apply mitigation", type="primary", key="yes_mitigation"):
+                col1, col2, col3 = st.columns([1, 1, 1])
+                with col2:
+                    if st.button("Yes, apply mitigation", type="primary", key="yes_mitigation", use_container_width=True):
                         st.session_state.show_mitigation_prompt = False
                         st.session_state.apply_mitigation = True
                         st.rerun()
-                with col2:
-                    if st.button("No, skip this step", key="no_mitigation"):
+                with col3:
+                    if st.button("No, skip this step", key="no_mitigation", use_container_width=True):
                         # Create a result indicating skip
                         results["stages"]["6_bias_mitigation"] = {
                             "status": "skipped",
@@ -782,8 +783,6 @@ def display_pipeline_stepwise():
                         }
                         st.session_state.show_mitigation_prompt = False
                         st.rerun()
-                with col3:
-                    pass
                 
                 return  # Don't proceed until user makes a choice
             
@@ -887,7 +886,7 @@ def display_pipeline_stepwise():
                 # Apply button
                 col1, col2, col3 = st.columns([2, 1, 1])
                 with col2:
-                    if st.button("Cancel", key="cancel_mitigation"):
+                    if st.button("Cancel", key="cancel_mitigation", use_container_width=True):
                         st.session_state.show_mitigation_prompt = True
                         st.session_state.apply_mitigation = False
                         st.rerun()
@@ -900,7 +899,7 @@ def display_pipeline_stepwise():
                             can_apply = False
                             break
                     
-                    if st.button("Apply All Methods", type="primary", key="apply_all_btn", disabled=not can_apply):
+                    if st.button("Apply All Methods", type="primary", key="apply_all_btn", disabled=not can_apply, use_container_width=True):
                         # Immediately mark stage as in-progress to prevent re-execution
                         if "6_bias_mitigation" not in results["stages"]:
                             results["stages"]["6_bias_mitigation"] = {
@@ -1011,9 +1010,9 @@ def display_pipeline_stepwise():
         
         # Show continue button if not the last stage
         if st.session_state.current_step < len(stages) - 1:
-            col1, col2 = st.columns([3, 1])
-            with col2:
-                if st.button(f"Continue →", key=f"continue_{stage_key}"):
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col3:
+                if st.button(f"Continue →", key=f"continue_{stage_key}", use_container_width=True):
                     st.session_state.current_step += 1
                     st.rerun()
     
@@ -1416,8 +1415,6 @@ def display_stage_results(stage_key, stage_result):
         if analysis_text and str(analysis_text).strip():
             # Special formatting for Stage 3 (Sensitive Attribute Detection)
             if stage_key == "3_sensitive":
-                import re
-                import pandas as pd
                 
                 # Display column summary first in expander
                 if "simplified_summary" in stage_result:
@@ -1586,6 +1583,12 @@ def _render_fairness_board(proxy_results: dict, title: str = "Fairness Metrics B
 def _render_fairness_comparison_board(comparison_data, method_name="Mitigation Method"):
     if not comparison_data or comparison_data.get("status") == "error":
         st.warning(f"Fairness comparison not available: {comparison_data.get('message', 'Unknown error')}")
+        return
+    
+    # Validate we have comparison data to display
+    per_attr_comparison = comparison_data.get("per_attribute_comparison", {})
+    if not per_attr_comparison:
+        st.info(f"No fairness comparison data available for {method_name}")
         return
     
     st.markdown(f"### Fairness Metrics Comparison: {method_name}")
@@ -2147,12 +2150,16 @@ def display_parsed_report(filepath, report_type="Full Report"):
                                     try:
                                         comparison_data = json.loads(comparison_json)
                                         if comparison_data and isinstance(comparison_data, dict):
-                                            method_name = comparison_data.get("method", "Mitigation Method")
-                                            st.markdown("---")
-                                            _render_fairness_comparison_board(
-                                                comparison_data=comparison_data,
-                                                method_name=method_name
-                                            )
+                                            # Validate we have the required comparison data structure
+                                            if "per_attribute_comparison" in comparison_data and comparison_data["per_attribute_comparison"]:
+                                                method_name = comparison_data.get("method", "Mitigation Method")
+                                                st.markdown("---")
+                                                _render_fairness_comparison_board(
+                                                    comparison_data=comparison_data,
+                                                    method_name=method_name
+                                                )
+                                            else:
+                                                st.info(f"Fairness comparison data incomplete for {comparison_data.get('method', 'this method')} - no per-attribute metrics found")
                                     except json.JSONDecodeError as e:
                                         st.warning(f"Could not parse fairness comparison (JSON error at position {e.pos})")
                                         with st.expander("View Raw Data (for debugging)"):
@@ -2160,6 +2167,8 @@ def display_parsed_report(filepath, report_type="Full Report"):
                                             st.text(f"First 500 chars: {comparison_json[:500]}")
                                     except Exception as e:
                                         st.warning(f"Error displaying fairness comparison: {type(e).__name__}: {str(e)}")
+                                        with st.expander("View Error Details (for debugging)"):
+                                            st.code(traceback.format_exc())
                         
                         if '[TOOL RESULT]' in section and '[AGENT ANALYSIS]' in section:
                             # Split tool result and analysis
@@ -2397,6 +2406,31 @@ def view_results_page():
                                     st.markdown("##### Sample Data (First 5 Rows)")
                                     st.dataframe(df.head(), width="stretch")
                                     
+                                    # Fairness Metrics Comparison - BEFORE Agent Analysis
+                                    st.markdown("---")
+                                    st.markdown("##### Fairness Metrics Comparison")
+                                    
+                                    fairness_json_filename = f"fairness_comparison_{method.lower().replace(' ', '_')}.json"
+                                    fairness_json_path = os.path.join(report_dir, fairness_json_filename)
+                                    
+                                    if os.path.exists(fairness_json_path):
+                                        try:
+                                            with open(fairness_json_path, 'r', encoding='utf-8') as f:
+                                                fairness_data = json.load(f)
+                                            
+                                            if fairness_data and isinstance(fairness_data, dict):
+                                                _render_fairness_comparison_board(
+                                                    comparison_data=fairness_data,
+                                                    method_name=method
+                                                )
+                                            else:
+                                                st.info("Fairness comparison data structure is invalid")
+                                        except Exception as e:
+                                            st.warning(f"Could not load fairness comparison: {str(e)}")
+                                    else:
+                                        st.info(f"No fairness comparison available for {method} (baseline metrics may not have been generated)")
+                                    
+                                    # Agent Analysis - AFTER Fairness Metrics Comparison
                                     method_upper = method.upper()
                                     if method_upper in methods_analysis:
                                         st.markdown("---")

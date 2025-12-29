@@ -651,6 +651,16 @@ class DatasetEvaluationPipeline:
                         if fairness_comparison and fairness_comparison.get("status") != "error":
                             report.append("\n\n[FAIRNESS COMPARISON]")
                             report.append(json.dumps(fairness_comparison, indent=2))
+                            
+                            # Also save as separate JSON file for easier loading in GUI
+                            try:
+                                fairness_json_filename = f"fairness_comparison_{method.lower().replace(' ', '_')}.json"
+                                fairness_json_path = os.path.join(self.report_dir, fairness_json_filename)
+                                with open(fairness_json_path, 'w', encoding='utf-8') as f:
+                                    json.dump(fairness_comparison, f, indent=2)
+                                print(f"Saved fairness comparison JSON: {fairness_json_path}")
+                            except Exception as e:
+                                print(f"Warning: Could not save fairness comparison JSON: {e}")
                         
                         # Agent analysis for this method
                         agent_analysis = comparison_result.get("agent_analysis")
