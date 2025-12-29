@@ -172,7 +172,6 @@ checkpoints/
 huggingface/
 
 # Data files (if large)
-*.csv
 *.parquet
 *.feather
 *.xlsx
