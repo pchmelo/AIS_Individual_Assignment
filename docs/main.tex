@@ -1,0 +1,350 @@
+\documentclass[10pt,aps,prb,twocolumn, nofootinbib]{revtex4-1}
+
+\usepackage{amssymb,amsmath}
+\usepackage{subfig}
+\usepackage{graphicx}
+\usepackage{color}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{svg}
+\usepackage{url}
+
+\hypersetup{
+    bookmarks=true,
+    unicode=false,
+    pdftoolbar=true,
+    pdfmenubar=true,
+    pdffitwindow=false,
+    pdfstartview={FitH},
+    pdfauthor={Vasco Ferreira da Rocha Melo},
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=red,
+}
+\graphicspath{{figures/}}
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+  	language=Python,
+  	aboveskip=3mm,
+  	belowskip=3mm,
+  	showstringspaces=false,
+  	columns=flexible,
+  	basicstyle={\small\ttfamily},
+  	numbers=none,
+  	numberstyle=\tiny\color{gray},
+ 	keywordstyle=\color{blue},
+	commentstyle=\color{dkgreen},
+  	stringstyle=\color{mauve},
+  	breaklines=true,
+  	breakatwhitespace=true,
+  	tabsize=3
+}
+
+\begin{document}
+
+\title{An Agentic AI Tool to help to detect fairness and imbalance in datasets \\ \large Artificial Intelligence and Society Individual Project}
+\author{Vasco Ferreira da Rocha Melo}
+\affiliation{Department of Informatics Engineering (DEI) \&  Department of Computer Science (DCC), University of Porto}
+\date{\today}
+
+\begin{abstract}
+This project presents an agentic AI system designed to help users uncover hidden fairness and quality issues in datasets that might otherwise go unnoticed until model deployment. The system employs specialized AI agents, each focused on distinct analytical tasks, to systematically inspect datasets for data quality problems, sensitive attribute patterns, class imbalances, and fairness violations. By decomposing the evaluation process into specialized agent roles, the system mitigates LLM hallucination risks through task-specific expertise and cross-validation between agents. The architecture incorporates user feedback loops at critical decision points—such as confirming sensitive attributes and selecting mitigation strategies—enabling users to guide the analysis and ensure domain-appropriate interpretations. The modular tool-based design allows individual components (fairness metrics, mitigation techniques, visualization methods) to be independently upgraded or extended without disrupting the overall pipeline, facilitating future improvements and adaptations to emerging fairness frameworks. The system generates comprehensive reports with actionable recommendations, empowering practitioners to proactively address bias before model training.
+\end{abstract}
+
+\maketitle
+
+\section{Introduction and Motivation}
+
+The rapid integration of Artificial Intelligence (AI) into critical decision-making processes—ranging from hiring and lending to criminal justice—has raised significant concerns regarding fairness and accountability. AI systems learn from historical data, which often reflects societal biases and structural inequalities. A fundamental challenge in responsible AI development is that many dataset problems remain \textit{hidden} until after model deployment: subtle correlations between sensitive attributes and target variables, intersectional disparities affecting specific demographic subgroups (e.g., ``Black women in rural areas''), and implicit proxy variables that encode protected characteristics through seemingly innocuous features. These hidden issues are particularly dangerous because they bypass traditional data quality checks and only manifest as discriminatory outcomes in production systems.
+
+Manual auditing of datasets for such latent biases is a complex, labor-intensive task requiring expertise in both domain knowledge and statistical fairness metrics. Data scientists often lack the time or specialized knowledge to thoroughly investigate all potential fairness violations across multiple sensitive attributes and their combinations. Furthermore, the selection of appropriate mitigation strategies requires a deep understanding of trade-offs between fairness metrics, model accuracy, and the specific legal or ethical constraints of the application domain.
+
+To address these challenges, this project develops an \textit{agentic AI system} that acts as an intelligent assistant to help users systematically discover and understand hidden problems in their datasets. The system decomposes fairness evaluation into specialized stages handled by dedicated agents, incorporates user feedback at critical decision points, and employs a modular architecture that enables continuous evolution alongside emerging fairness research and regulatory requirements.
+
+\section{Solution Overview}
+
+The developed system addresses the identified challenges through three key design principles that distinguish it from traditional automated fairness tools:
+
+\subsection{Agent Specialization for Hallucination Mitigation}
+
+Rather than delegating fairness evaluation to a single LLM (which risks hallucination and inconsistent outputs), the system decomposes the analysis into specialized stages, each handled by a dedicated agent with a well-defined role:
+
+\begin{itemize}
+    \item \textbf{Data Quality Inspector}: Identifies missing values, type inconsistencies, and suspicious encoding patterns that might mask sensitive information.
+    \item \textbf{Sensitive Attribute Detector}: Analyzes column semantics and value distributions to flag potentially protected attributes, reducing reliance on user domain knowledge.
+    \item \textbf{Imbalance Analyzer}: Computes statistical distributions and trains proxy models to quantify representation disparities across demographic groups.
+    \item \textbf{Fairness Evaluator}: Generates intersectional analysis combining multiple sensitive attributes to reveal hidden subgroup biases.
+    \item \textbf{Recommendation Synthesizer}: Integrates findings from all stages to propose context-aware mitigation strategies.
+\end{itemize}
+
+This specialization reduces hallucination by limiting each agent's scope to a specific analytical task with clear input-output contracts. Agents cross-validate each other's outputs (e.g., the fairness evaluator verifies the sensitive attributes detected earlier), creating a self-checking pipeline that catches inconsistencies.
+
+\subsection{User Feedback Loops for Guided Analysis}
+
+The system incorporates user feedback at key decision points to guide agents toward domain-appropriate interpretations. After the Sensitive Attribute Detector proposes candidate protected attributes, the user confirms or adjusts the selection before fairness analysis proceeds. Similarly, users choose which intersectional combinations to analyze (e.g., ``Race + Age'' vs. ``Race + Income''), preventing combinatorial explosion while ensuring relevant subgroups are examined. This human-in-the-loop design leverages the complementary strengths of AI (systematic pattern detection) and human expertise (domain context and ethical judgment).
+
+\subsection{Modular Architecture for Future Extensibility}
+
+The system organizes functionality into distinct tool modules (\texttt{FairnessTools}, \texttt{BiasMitigationTools}) managed through a unified \texttt{ToolManager} interface. Each tool is an independent Python function with a standardized JSON schema describing its parameters and outputs. This design enables:
+
+\begin{itemize}
+    \item \textbf{Independent Upgrades}: New fairness metrics (e.g., Calibration, Predictive Parity) can be added as tools without modifying the pipeline orchestrator or existing agents.
+    \item \textbf{Algorithm Swapping}: Mitigation techniques can be replaced or extended (e.g., adding Fairness-aware Reweighting, ADASYN) by implementing new tool functions.
+    \item \textbf{Visualization Extensions}: Custom plotting libraries or interactive dashboards can be integrated by adding tools to the visualization module.
+    \item \textbf{Model Backend Flexibility}: The \texttt{BaseModelClient} abstraction allows seamless switching between local models, commercial APIs, and future LLM providers without rewriting agent logic.
+\end{itemize}
+
+This modularity ensures the system can evolve alongside emerging fairness research and regulatory requirements, making it a sustainable platform for long-term responsible AI development.
+
+\section{Background}
+
+\subsection{Technology Stack}
+This project is implemented in \textbf{Python 3.8+}, leveraging a rich ecosystem of scientific computing and machine learning libraries. The core data manipulation is performed using \texttt{pandas} \cite{mckinney2010data} for tabular data processing and \texttt{numpy} \cite{harris2020array} for numerical operations. Machine learning capabilities are provided by \texttt{scikit-learn} \cite{pedregosa2011scikit}, which supplies classification algorithms including Random Forest, Logistic Regression, Gradient Boosting, and Support Vector Machines, along with comprehensive evaluation metrics.
+
+For bias mitigation, the system utilizes \texttt{imbalanced-learn} \cite{lemaitre2017imbalanced}, which implements SMOTE (Synthetic Minority Over-sampling Technique), random oversampling, and random undersampling strategies. Visualizations are generated using \texttt{matplotlib} \cite{hunter2007matplotlib} and \texttt{seaborn} to produce statistical charts and fairness comparison plots.
+
+The agentic AI component integrates Large Language Models (LLMs) through multiple backends: local inference using HuggingFace's \texttt{transformers} library \cite{wolf2020transformers} with PyTorch for models like IBM Granite 3B Code Instruct, cloud APIs including OpenRouter \cite{openrouter_api} for models like Grok, and Google Gemini \cite{google_gemini_api} via \texttt{google-generativeai}. The interactive user interface is built with \texttt{Streamlit} \cite{streamlit2023}, providing a web-based GUI for dataset upload, configuration, and result visualization. Complete dependency version specifications are available in the project repository \cite{ais_assignment_repo}.
+
+\subsection{Fairness Metrics}
+Common statistical measures include \textit{Statistical Parity}, which requires that the probability of a positive outcome be equal across groups, and \textit{Disparate Impact}, which compares the ratio of selection rates between protected and unprotected groups. Other metrics like \textit{Equalized Odds} focus on error rates (e.g., False Positive Rates, False Negative Rates) to ensure that models do not make mistakes more often for one group than another. The system implements these metrics by training proxy models on the dataset and computing group-specific performance statistics, including F1-scores, confusion matrices, and base rate comparisons.
+
+\subsection{Bias Mitigation Techniques}
+Approaches to mitigate bias are generally categorized into three stages: pre-processing (modifying the data), in-processing (modifying the learning algorithm), and post-processing (modifying model predictions). This tool focuses on \textit{pre-processing techniques} as they improve the underlying data quality before any modeling occurs. Common methods implemented include:
+\begin{itemize}
+    \item \textbf{SMOTE}: Generates synthetic samples for minority classes using k-nearest neighbors interpolation (via \texttt{imbalanced-learn}).
+    \item \textbf{Random Oversampling}: Duplicates samples from underrepresented classes.
+    \item \textbf{Random Undersampling}: Removes samples from overrepresented classes.
+    \item \textbf{Reweighting}: Calculates sample weights to balance class distribution while preserving sensitive group representation (using \texttt{sklearn.utils.class\_weight}).
+\end{itemize}
+
+\subsection{Agentic AI Architecture}
+Recent advancements in Generative AI have enabled the creation of "agentic" systems—autonomous programs that can perceive, reason, and act to achieve goals. Unlike static scripts, agents can dynamically interpret user intent, select appropriate tools, and generate human-readable explanations. This project builds upon this paradigm by orchestrating a team of specialized agents (see Figure \ref{fig:class_diagram}): \textit{FunctionCallerAgent} for tool selection and execution, \textit{DataAnalystAgent} for statistical interpretation, and \textit{ConversationalAgent} for natural language synthesis. Each agent is powered by an LLM backend (\texttt{BaseModelClient}) that supports function calling to invoke analytical tools from \texttt{FairnessTools} and \texttt{BiasMitigationTools} modules.
+
+
+\section{Methodology and Experimental Setup}
+
+This section describes the experimental framework, system architecture, and technical implementation of the agentic fairness evaluation pipeline.
+
+\subsection{System Architecture}
+
+The core component of the system is the \texttt{DatasetEvaluationPipeline} class, which orchestrates a multi-stage analysis workflow. As illustrated in Figure \ref{fig:pipeline_diagram_1}, the pipeline operates sequentially through seven distinct stages (Stages 0-6), with an optional bias mitigation extension shown in Figure \ref{fig:pipeline_diagram_2}. The architecture follows a modular design pattern, separating concerns between:
+
+\begin{itemize}
+    \item \textbf{Pipeline Orchestrator}: The \texttt{DatasetEvaluationPipeline} manages workflow execution, coordinates agents, and aggregates results into structured reports.
+    \item \textbf{Agents}: Specialized AI components (\texttt{FunctionCallerAgent}, \texttt{DataAnalystAgent}, \texttt{ConversationalAgent}) that interpret data, select tools, and generate insights.
+    \item \textbf{Tools}: Python functions encapsulated as \texttt{Tool} objects, managed by \texttt{ToolManager} subclasses (\texttt{FairnessTools}, \texttt{BiasMitigationTools}).
+    \item \textbf{Model Clients}: Abstract interfaces (\texttt{BaseModelClient}) with concrete implementations for local models (\texttt{LocalModelClient}) and cloud APIs (\texttt{OpenRouterClient}, \texttt{GeminiClient}).
+\end{itemize}
+
+The class hierarchy and relationships are detailed in Figure \ref{fig:class_diagram}, while the runtime interaction sequence is shown in Figure \ref{fig:seq_diagram}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\linewidth]{pipeline_1.png}
+    \caption{Dataset Evaluation Pipeline - Sequential workflow through Stages 0-6 for comprehensive fairness analysis (SVG available in \cite{pipeline_diagram_1}).}
+    \label{fig:pipeline_diagram_1}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\linewidth]{class_diagram.png}
+    \caption{Class Diagram - System architecture showing inheritance and composition relationships between Pipeline, Agents, Tools, and Model Clients (SVG available in \cite{class_diagram}).}
+    \label{fig:class_diagram}
+\end{figure}
+
+\subsection{Agent Architecture}
+
+The system employs three agent types, all inheriting from the abstract \texttt{BaseAgent} class:
+
+\begin{itemize}
+    \item \textbf{FunctionCallerAgent}: Responsible for interpreting the current pipeline stage requirements, selecting the appropriate analytical tool from \texttt{ToolManager}, and executing it with correct parameters. This agent parses LLM outputs formatted as JSON function calls and invokes the corresponding Python callable.
+    
+    \item \textbf{DataAnalystAgent}: Analyzes raw tool outputs (JSON-formatted statistical reports) and generates human-readable insights. For example, given class imbalance statistics, it synthesizes summaries identifying which demographic groups are underrepresented and the potential fairness implications.
+    
+    \item \textbf{ConversationalAgent}: Synthesizes findings from multiple stages into final recommendations. Unlike the other agents, it does not invoke tools but rather aggregates compiled results and generates actionable mitigation strategies in natural language.
+\end{itemize}
+
+All agents share a common \texttt{model\_client} attribute (composition pattern), allowing flexible LLM backend selection without modifying agent logic (see Figure \ref{fig:class_diagram}).
+
+\subsection{Tool Modules}
+
+The system provides two specialized tool collections:
+
+\textbf{FairnessTools} (8 tools):
+\begin{itemize}
+    \item \texttt{load\_dataset}: Loads CSV datasets and returns metadata (row count, column list, preview).
+    \item \texttt{check\_missing\_data}: Identifies null values, type inconsistencies, and suspicious patterns (e.g., ``?'', ``unknown'').
+    \item \texttt{detect\_sensitive\_attributes}: Returns column-level statistics (type, unique values, sample data, distribution).
+    \item \texttt{check\_class\_imbalance}: Computes value distributions for categorical columns, flagging imbalances $>65\%$.
+    \item \texttt{analyze\_target\_fairness}: Generates visualizations (target distribution, group proportions, intersectional combinations) and computes fairness statistics.
+    \item \texttt{analyze\_sensitive\_column}: Provides detailed distribution analysis for a specific column.
+    \item \texttt{train\_and\_evaluate\_proxy\_model}: Trains a classifier (Random Forest, Logistic Regression, Gradient Boosting, or SVM) to predict the target variable, then computes fairness metrics (Statistical Parity Difference, Disparate Impact) and group-specific performance (F1-score, FNR, FPR, TPR, TNR) for each sensitive attribute value.
+    \item \texttt{get\_dataset\_preview}: Returns comprehensive column metadata including types, null counts, and sample values.
+\end{itemize}
+
+\textbf{BiasMitigationTools} (5 tools):
+\begin{itemize}
+    \item \texttt{apply\_reweighting}: Computes sample weights using the formula $W(g,y) = \frac{N_g / C}{N_{g,y}}$, where $N_g$ is the count of group $g$, $C$ is the number of classes, and $N_{g,y}$ is the count of samples in group $g$ with target value $y$.
+    \item \texttt{apply\_smote}: Applies SMOTE from \texttt{imbalanced-learn} with configurable \texttt{k\_neighbors} and \texttt{sampling\_strategy}.
+    \item \texttt{apply\_random\_oversampling}: Duplicates minority class samples using \texttt{RandomOverSampler}.
+    \item \texttt{apply\_random\_undersampling}: Removes majority class samples using \texttt{RandomUnderSampler}.
+    \item \texttt{compare\_datasets}: Computes distribution changes between original and mitigated datasets, including target class proportions and sensitive attribute representation.
+\end{itemize}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.65\linewidth]{seq_diagram.png}
+    \caption{Sequence Diagram - Runtime interaction between User, Pipeline, Agents, Model Clients, and Tools during execution (SVG available in \cite{seq_diagram}).}
+    \label{fig:seq_diagram}
+\end{figure}
+
+\subsection{Evaluation Pipeline Stages}
+
+The pipeline executes the following stages sequentially (see Figure \ref{fig:pipeline_diagram_1}):
+
+\textbf{Stage 0 - Dataset Loading:} Validates dataset availability and loads the CSV file using \texttt{load\_dataset}. Returns error if file is not found.
+
+\bigskip
+
+\textbf{Stage 1 - Objective Inspection:} Extracts the user's evaluation objective and validates that the dataset format is compatible (CSV).
+
+\bigskip
+
+\textbf{Stage 2 - Data Quality Analysis:} Invokes \texttt{check\_missing\_data} to identify null values, type mismatches (e.g., numeric values stored as strings), and suspicious placeholders (``?'', ``-999''). The \texttt{DataAnalystAgent} interprets the results and highlights critical quality issues.
+
+\bigskip
+
+\textbf{Stage 3 - Sensitive Attribute Detection:} Calls \texttt{detect\_sensitive\_attributes} to retrieve column metadata. The \texttt{ConversationalAgent} analyzes column names and value distributions to identify protected attributes (e.g., ``Race'', ``Sex'', ``Age'', ``Native-country''). The agent outputs a structured list of sensitive columns, excluding the target variable if specified.
+
+\bigskip
+
+\textbf{Stage 4 - Imbalance Analysis:} Uses \texttt{check\_class\_imbalance} on the sensitive columns identified in Stage 3. If proxy modeling is enabled, \texttt{train\_and\_evaluate\_proxy\_model} is invoked to train a classifier and compute group-specific fairness metrics (Statistical Parity Difference, Disparate Impact, F1-score, FNR/FPR ratios).
+
+\bigskip
+
+\textbf{Stage 4.5 - Target Fairness Analysis} (optional, if target column specified): Invokes \texttt{analyze\_target\_fairness} with user-selected sensitive attribute pairs to generate intersectional visualizations (e.g., ``Race + Sex''). Visualizations are saved as PNG files in the report directory. If proxy modeling is enabled for intersectional analysis, temporary combined columns are created (e.g., ``White\_Male''), and a proxy model is trained to compute fairness metrics for these intersectional groups.
+
+\bigskip
+
+\textbf{Stage 5 - Recommendations:} The \texttt{ConversationalAgent} compiles findings from all previous stages and generates mitigation recommendations (e.g., ``Apply SMOTE to balance income distribution for Black females'').
+
+\bigskip
+
+\textbf{Stage 6 - Bias Mitigation} (optional): The user selects one or more mitigation methods (Reweighting, SMOTE, Random Oversampling, Random Undersampling). For each method, the pipeline applies the transformation, saves the mitigated dataset as a new CSV file, re-runs the imbalance analysis (Stage 4) on the mitigated data, and optionally trains a new proxy model to verify improvements. A comparison report is generated showing changes in fairness metrics and class distributions (Figure \ref{fig:pipeline_diagram_2}).
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\linewidth]{pipeline_2.png}
+    \caption{Bias Mitigation Pipeline - Optional extension showing the workflow for applying mitigation techniques and validating their effectiveness (SVG available in \cite{pipeline_diagram_2}).}
+    \label{fig:pipeline_diagram_2}
+\end{figure}
+
+\subsection{Model Configuration}
+
+The system supports three LLM backends:
+
+\begin{itemize}
+    \item \textbf{IBM Granite 3B Code Instruct} (Local): Loaded via HuggingFace \texttt{transformers} with PyTorch backend. Inference runs on local GPU/CPU with \texttt{torch.float16} precision. The model is prompted using a custom chat template (System/User/Assistant roles) and supports function calling for tool selection.
+    
+    \item \textbf{Grok} (API): Accessed via OpenRouter's unified API (\url{https://openrouter.ai/api/v1/chat/completions}). Requires \texttt{OPENROUTER\_API\_KEY} environment variable. Model: \texttt{x-ai/grok-4.1-fast:free}.
+    
+    \item \textbf{Google Gemini} (API): Accessed via \texttt{google-generativeai} SDK. Requires \texttt{GOOGLE\_API\_KEY} environment variable. Model: \texttt{gemini-2.5-flash-lite}. System instructions are passed separately from chat history.
+\end{itemize}
+
+All models are configured with \texttt{temperature=0.2} for deterministic outputs and \texttt{max\_tokens=4096} for comprehensive analysis generation.
+
+\subsection{Datasets}
+
+The system accepts CSV-formatted tabular datasets. Example datasets used for testing include the Adult Census Income dataset (48,842 rows, 14 columns, sensitive attributes: Age, Race, Sex, Native-country; target: Income). Users can upload custom datasets via the Streamlit GUI or place CSV files in the \texttt{data/} directory.
+
+\subsection{Evaluation Metrics}
+
+The system computes the following metrics:
+
+\textbf{Fairness Metrics} (computed by proxy models):
+\begin{itemize}
+    \item \textbf{Statistical Parity Difference}: $P(Y=1|A=a) - P(Y=1|A=b)$ where $A$ is a sensitive attribute and $Y$ is the prediction. Values close to 0 indicate fairness.
+    \item \textbf{Disparate Impact}: $\frac{P(Y=1|A=\text{unprivileged})}{P(Y=1|A=\text{privileged})}$. Values close to 1 indicate fairness; values $<0.8$ often indicate bias.
+    \item \textbf{Group-Specific Metrics}: F1-score, Accuracy, False Negative Rate (FNR), False Positive Rate (FPR), True Positive Rate (TPR), True Negative Rate (TNR) computed separately for each group.
+\end{itemize}
+
+\textbf{Imbalance Metrics}:
+\begin{itemize}
+    \item \textbf{Imbalance Ratio}: $\frac{\max(\text{class counts})}{\min(\text{class counts})}$. Ratios $>3$ indicate significant imbalance.
+    \item \textbf{Group Representation}: Percentage of each sensitive group in the dataset.
+\end{itemize}
+
+
+\section{Results and Discussion}
+
+To validate the system's effectiveness, we conducted an evaluation using the Adult Census Income dataset \cite{brownlee_adult}, which contains 48,842 records with demographic attributes (Age, Race, Sex, Native-country) and a binary income classification target ($\leq$50K or $>$50K). This dataset is a well-known benchmark for fairness analysis due to its documented demographic imbalances.
+
+\subsection{Key Findings from Automated Evaluation}
+
+The system successfully executed all pipeline stages and generated a comprehensive evaluation report \cite{report_adult}. Key findings include:
+
+\begin{itemize}
+    \item \textbf{Sensitive Attribute Detection}: The system correctly identified 4 protected attributes (Age, Race, Sex, Native-country) without manual specification, analyzing column semantics and value distributions.
+    
+    \item \textbf{Class Imbalance}: Significant imbalances were detected across demographic groups. For example, the ``Race'' attribute showed a 5.4:1 ratio between the majority group (White) and minority groups, while the ``Sex'' attribute exhibited a 2:1 male-to-female ratio.
+    
+    \item \textbf{Fairness Violations}: Proxy model analysis revealed disparate impact across intersectional groups. The system flagged higher False Negative Rates (FNR) for specific demographic combinations, indicating that qualified individuals from underrepresented groups were being systematically misclassified.
+    
+    \item \textbf{Intersectional Analysis}: The user-guided selection of attribute pairs (e.g., ``Race + Sex'') successfully generated visualizations exposing hidden biases in subgroup combinations that would not be apparent from single-attribute analysis.
+\end{itemize}
+
+The complete evaluation, including statistical summaries, fairness metrics, and generated visualizations, is available in the project repository \cite{report_adult}.
+
+\subsection{Bias Mitigation and Validation}
+
+The mitigation tools demonstrated the ability to address identified imbalances. The system supports four techniques: \textit{Reweighting}, \textit{SMOTE}, \textit{Random Oversampling}, and \textit{Random Undersampling}. Post-mitigation validation revealed quantifiable improvements in fairness metrics. For instance, applying SMOTE reduced the imbalance ratio from 5.4:1 to near 1:1 for the ``Race'' attribute, while disparate impact metrics improved across all tested groups. Crucially, the system automatically re-evaluates the mitigated dataset, providing comparative analysis reports that quantify both fairness gains and any trade-offs in class distribution or potential model accuracy.
+
+\section{Conclusions}
+
+This project demonstrates that agentic AI systems can effectively automate fairness evaluation while maintaining interpretability and extensibility. By decomposing analysis into specialized agent roles, incorporating user feedback at critical decision points, and employing a modular tool architecture, the system successfully identifies hidden biases in datasets before model training. Testing on the Adult Census Income dataset validated the system's ability to detect sensitive attributes, quantify intersectional disparities, and apply evidence-based mitigation strategies. The modular design ensures the framework can evolve alongside emerging fairness research, making it a sustainable platform for responsible AI development.
+
+\section{Future Work: Enhanced Human-in-the-Loop Feedback}
+
+\subsection{Motivation for Adaptive Feedback Integration}
+
+While the current system incorporates user feedback at predefined checkpoints (e.g., confirming sensitive attributes, selecting intersectional pairs), the pipeline operates largely sequentially without the ability to dynamically adjust based on intermediate findings. A significant limitation is that users cannot easily refine the analysis mid-execution if initial results reveal unexpected patterns or domain-specific nuances. For instance, if the Data Quality Analysis stage flags ``Age'' as having suspicious values, the user might want to investigate this column more deeply before proceeding, or request a different preprocessing strategy tailored to their domain knowledge.
+
+\subsection{Proposed Solution: Feedback Interpretation Agent}
+
+We propose integrating a \textbf{Feedback Interpretation Agent} that operates after each pipeline stage, enabling users to provide natural language feedback and allowing the system to adapt accordingly. This agent would:
+
+\begin{itemize}
+    \item \textbf{Interpret Natural Language Feedback}: Parse user comments such as ``The 'Education' column is more important than 'Marital Status' for fairness analysis'' or ``Re-run Stage 3 excluding 'Age' from sensitive attributes.''
+    
+    \item \textbf{Decide on Adaptive Actions}: Based on the feedback, determine whether to:
+    \begin{itemize}
+        \item \textit{Rerun the current stage} with adjusted parameters (e.g., different sensitive column selections, alternate threshold values).
+        \item \textit{Invoke alternative tools} not initially selected (e.g., switch from Random Forest to Logistic Regression for proxy modeling if the user questions model assumptions).
+        \item \textit{Skip to a specific stage} if the user wants to bypass certain analyses.
+        \item \textit{Proceed normally} if the user approves the current results.
+    \end{itemize}
+    
+    \item \textbf{Maintain Analysis Coherence}: Log all feedback-driven modifications to ensure the final report accurately reflects the iterative refinement process, providing transparency about which decisions were AI-driven versus user-guided.
+\end{itemize}
+
+\subsection{Conceptual Workflow}
+
+Figure \ref{fig:feedback_loop} illustrates the proposed feedback loop architecture. After each stage completes, the system presents results to the user and waits for feedback. The Feedback Interpretation Agent analyzes the input and coordinates with the Pipeline Orchestrator to execute the appropriate action (rerun, adjust, skip, or continue). This creates an iterative refinement cycle where the AI's systematic analysis is continuously guided by the user's domain expertise.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\linewidth]{feedback_loop_diagram.png}
+    \caption{Proposed Human-in-the-Loop Feedback Architecture - The Feedback Interpretation Agent enables iterative refinement of the analysis by interpreting natural language feedback and coordinating adaptive pipeline actions.}
+    \label{fig:feedback_loop}
+\end{figure}
+
+This enhancement would transform the system from a semi-automated tool into a true \textit{collaborative assistant}, where human judgment and AI capabilities synergistically produce more accurate, context-aware fairness evaluations.
+
+\bibliography{bib}
+
+
+\end{document}

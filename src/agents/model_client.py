@@ -1,10 +1,19 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
 import requests
 import os
 from dotenv import load_dotenv
+
+# Optional imports for local model support
+try:
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+    AutoModelForCausalLM = None
+    AutoTokenizer = None
 
 try:
     import google.generativeai as genai
@@ -26,6 +35,12 @@ class BaseModelClient(ABC):
 
 class LocalModelClient(BaseModelClient):    
     def __init__(self, model_name: str = "ibm-granite/granite-3b-code-instruct"):
+        if not TORCH_AVAILABLE:
+            raise ImportError(
+                "PyTorch and transformers are required for local model inference. "
+                "Install them with: pip install torch transformers\n"
+                "Alternatively, use API-based models (Gemini or OpenRouter) which don't require PyTorch."
+            )
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModelForCausalLM.from_pretrained(
