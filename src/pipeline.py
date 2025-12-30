@@ -11,6 +11,7 @@ from agents.model_client import LocalModelClient, OpenRouterClient, GeminiClient
 from tools.fairness_tools import FairnessTools
 from tools.bias_mitigation_tools import BiasMitigationTools
 import pandas as pd
+import numpy as np
 
 
 class DatasetEvaluationPipeline:
@@ -233,13 +234,38 @@ class DatasetEvaluationPipeline:
         print(f"Audit request: {result['is_audit_request']}")
         return result
     
+    def _convert_to_serializable(self, obj):
+        if isinstance(obj, dict):
+            return {str(k): self._convert_to_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._convert_to_serializable(element) for element in obj]
+        elif isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
+                            np.int16, np.int32, np.int64, np.uint8,
+                            np.uint16, np.uint32, np.uint64)):
+            return int(obj)
+        elif isinstance(obj, (np.float16, np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, (np.bool_)):
+            return bool(obj)
+        elif isinstance(obj, np.ndarray):
+            return self._convert_to_serializable(obj.tolist())
+        else:
+            return obj
+
+    def _safe_json_dumps(self, data, indent=2):
+        try:
+            serializable_data = self._convert_to_serializable(data)
+            return json.dumps(serializable_data, indent=indent)
+        except Exception as e:
+            return f"Error serializing data: {str(e)}"
+
     def _stage_2_data_quality(self, dataset_name: str) -> Dict[str, Any]:
         print("Tool: check_missing_data")
         tool_result = self.fairness_tools.check_missing_data(dataset_name)
-        print(f"Tool result: {json.dumps(tool_result, indent=2)}")
+        print(f"Tool result: {self._safe_json_dumps(tool_result)}")
         
         print("\nAgent analyzing quality results...")
-        analysis = self.quality_agent.run(f"Analyze this missing data report and provide insights: {json.dumps(tool_result)}")
+        analysis = self.quality_agent.run(f"Analyze this missing data report and provide insights: {self._safe_json_dumps(tool_result)}")
         print(f"Quality analysis complete: {len(str(analysis))} chars")
         
         return {
@@ -272,7 +298,7 @@ class DatasetEvaluationPipeline:
     def _stage_3_sensitive_detection(self, dataset_name: str, target_column: str = None) -> Dict[str, Any]:
         print("Tool: detect_sensitive_attributes")
         columns_result = self.fairness_tools.detect_sensitive_attributes(dataset_name)
-        print(f"Tool result: {len(json.dumps(columns_result))} chars")
+        print(f"Tool result: {len(self._safe_json_dumps(columns_result))} chars")
         
         simplified_summary = self._create_simplified_column_summary(columns_result.get('columns', []))
         print(f"\nSimplified summary:\n{simplified_summary}")
@@ -337,7 +363,7 @@ class DatasetEvaluationPipeline:
         
         print("Tool: check_class_imbalance")
         tool_result = self.fairness_tools.check_class_imbalance(dataset_name)
-        print(f"Tool result: {json.dumps(tool_result, indent=2)}")
+        print(f"Tool result: {self._safe_json_dumps(tool_result)}")
         
         if tool_result.get("status") == "success" and sensitive_cols:
             filtered_details = [
@@ -370,7 +396,7 @@ class DatasetEvaluationPipeline:
             # Format per-label metrics if available
             per_label_str = ""
             if 'per_label_metrics' in proxy_results.get('performance', {}):
-                per_label_str = "\nPer-Label Performance (F1, Precision, Recall):\n" + json.dumps(proxy_results['performance']['per_label_metrics'], indent=2)
+                per_label_str = "\nPer-Label Performance (F1, Precision, Recall):\n" + self._safe_json_dumps(proxy_results['performance']['per_label_metrics'])
 
             proxy_context = f"""
             PROXY MODEL FAIRNESS ANALYSIS:
@@ -379,7 +405,7 @@ class DatasetEvaluationPipeline:
             {per_label_str}
 
             Fairness Metrics per Attribute (F1 Score & Disparity):
-            {json.dumps(proxy_results.get('fairness_analysis', {}), indent=2)}
+            {self._safe_json_dumps(proxy_results.get('fairness_analysis', {}))}
             
             Include these metrics (Statistical Parity, Disparate Impact, Group F1, FNR/FPR Ratios) in your assessment.
             
@@ -395,7 +421,7 @@ class DatasetEvaluationPipeline:
                                 SENSITIVE COLUMNS IDENTIFIED: {', '.join(sensitive_cols)}
 
                                 IMBALANCE DATA (for sensitive columns only):
-                                {json.dumps(tool_result, indent=2)}
+                                {self._safe_json_dumps(tool_result)}
                                 {proxy_context}
 
                                 Provide:
@@ -502,7 +528,7 @@ class DatasetEvaluationPipeline:
             (Model: {intersectional_proxy_results.get('model_type')})
             
             Fairness Metrics for Combined Groups (Intersectional):
-            {json.dumps(intersectional_proxy_results.get('fairness_analysis', {}), indent=2)}
+            {self._safe_json_dumps(intersectional_proxy_results.get('fairness_analysis', {}))}
             
             CRITICAL ANALYSIS REQUIREMENTS:
             1. Analyze "F1 Score" for each intersectional group. Identify which SPECIFIC combination (e.g. Black Female) has the lowest performance.
@@ -515,7 +541,7 @@ class DatasetEvaluationPipeline:
                                 SENSITIVE COLUMNS ANALYZED: {', '.join(sensitive_cols)}
 
                                 FAIRNESS METRICS DATA:
-                                {json.dumps(tool_result, indent=2)}
+                                {self._safe_json_dumps(tool_result)}
                                 {proxy_context}
 
                                 Provide analysis on:
@@ -566,7 +592,7 @@ class DatasetEvaluationPipeline:
         
         for stage_name, stage_data in self.evaluation_results["stages"].items():
             summary_parts.append(f"\n{stage_name.upper()}:")
-            summary_parts.append(json.dumps(stage_data, indent=2))
+            summary_parts.append(self._safe_json_dumps(stage_data))
         
         return "\n".join(summary_parts)
     
@@ -631,7 +657,7 @@ class DatasetEvaluationPipeline:
                         mitigation_result = method_result.get("mitigation_result", {})
                         if mitigation_result:
                             report.append("\n[MITIGATION RESULTS]")
-                            report.append(json.dumps(mitigation_result, indent=2))
+                            report.append(self._safe_json_dumps(mitigation_result))
                         
                         # Comparison results - Check top level first, then inside mitigation_result
                         comparison_result = method_result.get("comparison_result")
@@ -641,7 +667,7 @@ class DatasetEvaluationPipeline:
                         if comparison_result:
                             report.append("\n[COMPARISON RESULTS]")
                             comparison_without_analysis = {k: v for k, v in comparison_result.items() if k != "agent_analysis"}
-                            report.append(json.dumps(comparison_without_analysis, indent=2))
+                            report.append(self._safe_json_dumps(comparison_without_analysis))
                         
                         # Fairness comparison results - Check top level first, then inside mitigation_result
                         fairness_comparison = method_result.get("fairness_comparison")
@@ -650,14 +676,14 @@ class DatasetEvaluationPipeline:
                             
                         if fairness_comparison and fairness_comparison.get("status") != "error":
                             report.append("\n\n[FAIRNESS COMPARISON]")
-                            report.append(json.dumps(fairness_comparison, indent=2))
+                            report.append(self._safe_json_dumps(fairness_comparison))
                             
                             # Also save as separate JSON file for easier loading in GUI
                             try:
                                 fairness_json_filename = f"fairness_comparison_{method.lower().replace(' ', '_')}.json"
                                 fairness_json_path = os.path.join(self.report_dir, fairness_json_filename)
                                 with open(fairness_json_path, 'w', encoding='utf-8') as f:
-                                    json.dump(fairness_comparison, f, indent=2)
+                                    f.write(self._safe_json_dumps(fairness_comparison))
                                 print(f"Saved fairness comparison JSON: {fairness_json_path}")
                             except Exception as e:
                                 print(f"Warning: Could not save fairness comparison JSON: {e}")
@@ -677,17 +703,17 @@ class DatasetEvaluationPipeline:
                     
                     if "tool_result" in stage_data:
                         report.append("\n[TOOL RESULT]")
-                        report.append(json.dumps(stage_data["tool_result"], indent=2))
+                        report.append(self._safe_json_dumps(stage_data["tool_result"]))
                     
                     # Include proxy model results for Stage 4
                     if "proxy_model_results" in stage_data:
                         report.append("\n\n[PROXY MODEL RESULTS]")
-                        report.append(json.dumps(stage_data["proxy_model_results"], indent=2))
+                        report.append(self._safe_json_dumps(stage_data["proxy_model_results"]))
                     
                     # Include intersectional proxy results for Stage 4.5
                     if "intersectional_proxy_results" in stage_data:
                         report.append("\n\n[INTERSECTIONAL PROXY RESULTS]")
-                        report.append(json.dumps(stage_data["intersectional_proxy_results"], indent=2))
+                        report.append(self._safe_json_dumps(stage_data["intersectional_proxy_results"]))
                     
                     if "agent_analysis" in stage_data:
                         report.append("\n\n[AGENT ANALYSIS]")
@@ -720,9 +746,9 @@ class DatasetEvaluationPipeline:
                     report.append(stage_data["recommendations"])
                 
                 else:
-                    report.append(json.dumps(stage_data, indent=2))
+                    report.append(self._safe_json_dumps(stage_data))
             else:
-                report.append(json.dumps(stage_data, indent=2))
+                report.append(self._safe_json_dumps(stage_data))
         
         report.append("\n\n" + "=" * 80)
         report.append("END OF REPORT")
@@ -783,7 +809,7 @@ class DatasetEvaluationPipeline:
                     report.append(f"\n{stage_data['recommendations']}")
                 
                 else:
-                    report.append(f"\n{json.dumps(stage_data, indent=2)}")
+                    report.append(f"\n{self._safe_json_dumps(stage_data)}")
         
         report.append("\n\n" + "=" * 80)
         report.append("END OF SUMMARY")
@@ -934,7 +960,7 @@ class DatasetEvaluationPipeline:
             # Generate agent analysis of the comparison
             analysis_prompt = f"""Analyze the comparison between original and mitigated datasets:
             
-            {json.dumps(result, indent=2)}
+            {self._safe_json_dumps(result)}
             
             Provide a detailed analysis:
             1. Was the bias mitigation effective? (Yes/No and why)

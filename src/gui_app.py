@@ -498,11 +498,11 @@ def new_evaluation_page():
             label = model_options[model_id]
             if model_id == 1:  # Grok
                 has_key = bool(os.getenv("OPENROUTER_API_KEY"))
-                status = "✅" if has_key else "❌"
+                status = "Online" if has_key else "Offline"
                 return f"{label} {status}"
             elif model_id == 2:  # Gemini
                 has_key = bool(os.getenv("GOOGLE_API_KEY"))
-                status = "✅" if has_key else "❌"
+                status = "Online" if has_key else "Offline"
                 return f"{label} {status}"
             return label
         

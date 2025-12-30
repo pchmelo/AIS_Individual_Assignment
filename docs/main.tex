@@ -121,6 +121,20 @@ Approaches to mitigate bias are generally categorized into three stages: pre-pro
     \item \textbf{Reweighting}: Calculates sample weights to balance class distribution while preserving sensitive group representation (using \texttt{sklearn.utils.class\_weight}).
 \end{itemize}
 
+\subsection{Multi-Class Classification Considerations}
+
+The fairness metrics described above were originally formulated for \textit{binary classification} problems (e.g., predicting approved/denied, hired/not hired). However, real-world datasets often contain multi-class targets (e.g., income brackets: low/medium/high; education levels: elementary/secondary/tertiary). The system addresses this through the following adaptations:
+
+\begin{itemize}
+    \item \textbf{Macro F1-Score}: For multi-class problems, the system computes the F1-score separately for each class and reports the unweighted average (macro-average). This approach treats all classes equally regardless of their frequency, which is important for detecting disparities in minority classes.
+    
+    \item \textbf{One-vs-Rest Strategy for Fairness Metrics}: Statistical Parity Difference and Disparate Impact are calculated using a one-vs-rest approach. The system identifies a ``positive'' class (typically the second class alphabetically or the last class index) and computes metrics by treating predictions as binary (positive class vs. all others). For example, with income levels $\{$low, medium, high$\}$, the fairness analysis would focus on ``high income'' as the positive outcome.
+    
+    \item \textbf{Error Rate Metrics (FNR, FPR, TPR, TNR)}: These are computed per-group using the same one-vs-rest binarization. For a group $g$, the confusion matrix is constructed by comparing ground truth (class $c$ vs. not class $c$) against predictions (class $c$ vs. not class $c$), where $c$ is the designated positive class.
+\end{itemize}
+
+\textbf{Limitations:} This one-vs-rest approach has inherent limitations—it does not capture fairness across \textit{all} class boundaries simultaneously. For example, a model might be fair in predicting ``high income'' but unfair in distinguishing ``medium'' from ``low'' income across demographic groups. A comprehensive multi-class fairness analysis would require computing metrics for every possible class pairing (e.g., $\binom{K}{2}$ comparisons for $K$ classes) or using multi-class extensions like Generalized Entropy Index \cite{speicher2018unified}. The current implementation prioritizes interpretability by focusing on the single most relevant outcome (the positive class), which users should confirm aligns with their application's critical decision boundary.
+
 \subsection{Agentic AI Architecture}
 Recent advancements in Generative AI have enabled the creation of "agentic" systems—autonomous programs that can perceive, reason, and act to achieve goals. Unlike static scripts, agents can dynamically interpret user intent, select appropriate tools, and generate human-readable explanations. This project builds upon this paradigm by orchestrating a team of specialized agents (see Figure \ref{fig:class_diagram}): \textit{FunctionCallerAgent} for tool selection and execution, \textit{DataAnalystAgent} for statistical interpretation, and \textit{ConversationalAgent} for natural language synthesis. Each agent is powered by an LLM backend (\texttt{BaseModelClient}) that supports function calling to invoke analytical tools from \texttt{FairnessTools} and \texttt{BiasMitigationTools} modules.
 

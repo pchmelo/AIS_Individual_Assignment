@@ -879,10 +879,21 @@ class FairnessTools(ToolManager):
             positive_label_idx = 1 if len(le_target.classes_) > 1 else 0
             positive_class_name = le_target.classes_[positive_label_idx]
             
-            # Split data
-            X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
-                X, y, df.index, test_size=test_size, random_state=42
-            )
+            # Split data with stratification to ensure both classes appear in train/test
+            # This is critical for imbalanced datasets where minority class is rare
+            # However, stratification can fail for very small datasets or when a class
+            # has too few samples, so we fall back to regular splitting in those cases
+            try:
+                X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
+                    X, y, df.index, test_size=test_size, random_state=42, stratify=y
+                )
+            except ValueError as e:
+                # Stratification failed (likely due to a class having too few samples)
+                # Fall back to regular random split
+                print(f"Warning: Stratified split failed ({str(e)}), using regular split")
+                X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
+                    X, y, df.index, test_size=test_size, random_state=42
+                )
             
             X_test_raw = df.loc[idx_test].drop(columns=[target_column])
             
@@ -906,8 +917,8 @@ class FairnessTools(ToolManager):
             
             # Global Metrics
             acc = accuracy_score(y_test, y_pred)
-            f1_macro = f1_score(y_test, y_pred, average='macro')
-            f1_weighted = f1_score(y_test, y_pred, average='weighted')
+            f1_macro = f1_score(y_test, y_pred, average='macro', zero_division=0)
+            f1_weighted = f1_score(y_test, y_pred, average='weighted', zero_division=0)
             try:
                 conf_matrix = confusion_matrix(y_test, y_pred).tolist()
             except:
