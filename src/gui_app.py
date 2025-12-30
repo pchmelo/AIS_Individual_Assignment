@@ -241,6 +241,22 @@ def get_dataset_columns(dataset_name):
         st.error(f"Error reading dataset: {str(e)}")
         return []
 
+def validate_api_keys(model_choice):
+    model_names = {
+        0: "IBM Granite (Local)",
+        1: "Grok (API)",
+        2: "Google Gemini (API)"
+    }
+    
+    if model_choice == 1:  # Grok
+        if not os.getenv("OPENROUTER_API_KEY"):
+            return False, f"Missing OPENROUTER_API_KEY for {model_names[model_choice]}. Please add it to Streamlit Secrets or .env file."
+    elif model_choice == 2:  # Gemini
+        if not os.getenv("GOOGLE_API_KEY"):
+            return False, f"Missing GOOGLE_API_KEY for {model_names[model_choice]}. Please add it to Streamlit Secrets or .env file."
+    
+    return True, "OK"
+
 
 
 def display_quality_results(tool_result):
@@ -476,11 +492,30 @@ def new_evaluation_page():
             1: "Grok (API)",
             2: "Google Gemini (API)"
         }
+        
+        # Show API key status
+        def get_model_label(model_id):
+            label = model_options[model_id]
+            if model_id == 1:  # Grok
+                has_key = bool(os.getenv("OPENROUTER_API_KEY"))
+                status = "✅" if has_key else "❌"
+                return f"{label} {status}"
+            elif model_id == 2:  # Gemini
+                has_key = bool(os.getenv("GOOGLE_API_KEY"))
+                status = "✅" if has_key else "❌"
+                return f"{label} {status}"
+            return label
+        
         st.session_state.model_choice = st.radio(
             "Choose model:",
             options=list(model_options.keys()),
-            format_func=lambda x: model_options[x]
+            format_func=get_model_label
         )
+        
+        # Show warning if selected model doesn't have API key
+        is_valid, error_msg = validate_api_keys(st.session_state.model_choice)
+        if not is_valid:
+            st.warning("⚠️ API key missing for this model")
         
         # Target column selection
         st.markdown("#### Target Column (Optional)")
@@ -521,6 +556,18 @@ def new_evaluation_page():
 
 def initialize_pipeline():
     try:
+        # Validate API keys before initializing pipeline
+        is_valid, error_msg = validate_api_keys(st.session_state.model_choice)
+        if not is_valid:
+            st.error(f"⚠️ {error_msg}")
+            st.info("💡 **How to fix this on Streamlit Cloud:**\n\n"
+                   "1. Go to your app dashboard\n"
+                   "2. Click on 'Settings' → 'Secrets'\n"
+                   "3. Add your API key in TOML format:\n"
+                   "```\nGOOGLE_API_KEY = \"your-key-here\"\n```")
+            st.session_state.pipeline_started = False
+            return
+        
         # Create user prompt
         prompt = f"Evaluate the dataset '{st.session_state.dataset_name}' for data quality and fairness issues."
         if st.session_state.target_column:
@@ -532,8 +579,9 @@ def initialize_pipeline():
         st.session_state.current_step = 0
         st.session_state.step_approved = {}
         
-        # Initialize pipeline
-        pipeline = DatasetEvaluationPipeline(use_api_model=st.session_state.model_choice)
+        # Initialize pipeline with a spinner to show progress
+        with st.spinner("Initializing pipeline..."):
+            pipeline = DatasetEvaluationPipeline(use_api_model=st.session_state.model_choice)
         
         # Set up pipeline properties
         pipeline.current_dataset = st.session_state.dataset_name
@@ -557,9 +605,15 @@ def initialize_pipeline():
         
         st.rerun()
         
+    except ValueError as ve:
+        # Catch API key errors specifically
+        st.error(f"⚠️ Configuration Error: {str(ve)}")
+        st.info("💡 Please check your API keys in Streamlit Secrets or .env file.")
+        st.session_state.pipeline_started = False
     except Exception as e:
-        st.error(f"Error initializing pipeline: {str(e)}")
+        st.error(f"❌ Error initializing pipeline: {str(e)}")
         st.exception(e)
+        st.session_state.pipeline_started = False
 
 def display_pipeline_stepwise():
     results = st.session_state.evaluation_results
