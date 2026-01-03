@@ -36,6 +36,12 @@ python src/main.py
 
 The application will launch in the mode specified in `src/main.py`.
 
+## Datasets
+Example datasets are provided in the `src/data/` directory for testing and demonstration purposes.
+
+## Reports
+Generated reports will be saved in the `reports/` directory after evaluation. There is sample report available at `reports/` for each example dataset.
+
 ## GUI Screenshots
 
 ![Caption 1](docs/img/1.png)
