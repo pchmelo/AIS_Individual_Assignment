@@ -44,14 +44,15 @@ class DataAnalystAgent(BaseAgent):
             messages.append({"role": "assistant", "content": model_reply})
             messages.append({
                 "role": "system",
-                "content": f"""TOOL EXECUTION RESULT:
-{json.dumps(result, indent=2)}
-
-Provide a comprehensive analysis including:
-1. Summary of key findings from the data
-2. Specific issues identified with numbers
-3. Severity assessment
-4. Recommendations"""
+                "content": f"""
+                    TOOL EXECUTION RESULT:
+                    {json.dumps(result, indent=2)}
+                    Provide a comprehensive analysis including:
+                    1. Summary of key findings from the data
+                    2. Specific issues identified with numbers
+                    3. Severity assessment
+                    4. Recommendations
+                """
             })
             
             final_response = self.ask_model(messages, temperature=0.3, max_tokens=4096)

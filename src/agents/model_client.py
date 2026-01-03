@@ -4,7 +4,6 @@ import requests
 import os
 from dotenv import load_dotenv
 
-# Optional imports for local model support
 try:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -167,7 +166,6 @@ class GeminiClient(BaseModelClient):
             content = msg["content"]
             
             if role == "system":
-                # Gemini uses system_instruction separately
                 system_instruction = content
             elif role == "user":
                 chat_history.append({"role": "user", "parts": [content]})
