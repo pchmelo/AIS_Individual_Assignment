@@ -460,7 +460,6 @@ def main_page():
 def new_evaluation_page():
     st.markdown("<div class='main-header'>New Evaluation</div>", unsafe_allow_html=True)
     
-    # Sidebar configuration
     with st.sidebar:
         st.markdown("### Configuration")
         
@@ -472,7 +471,6 @@ def new_evaluation_page():
         
         st.markdown("---")
         
-        # Dataset selection
         st.markdown("#### Dataset")
         datasets = get_available_datasets()
         
@@ -485,7 +483,6 @@ def new_evaluation_page():
         selected_dataset = st.selectbox("Select dataset", datasets)
         st.session_state.dataset_name = selected_dataset
         
-        # Model selection
         st.markdown("#### Model Selection")
         model_options = {
             0: "IBM Granite (Local)",
@@ -512,12 +509,10 @@ def new_evaluation_page():
             format_func=get_model_label
         )
         
-        # Show warning if selected model doesn't have API key
         is_valid, error_msg = validate_api_keys(st.session_state.model_choice)
         if not is_valid:
-            st.warning("⚠️ API key missing for this model")
+            st.warning("API key missing for this model")
         
-        # Target column selection
         st.markdown("#### Target Column (Optional)")
         use_target = st.checkbox("Specify target column for fairness analysis")
         
@@ -533,12 +528,10 @@ def new_evaluation_page():
         
         st.markdown("---")
         
-        # Start evaluation button
         if selected_dataset:
             if st.button("Start Evaluation", width='stretch', type="primary"):
                 initialize_pipeline()
 
-    # Main content area
     if st.session_state.pipeline_started:
         display_pipeline_stepwise()
     elif st.session_state.evaluation_results:
@@ -556,11 +549,10 @@ def new_evaluation_page():
 
 def initialize_pipeline():
     try:
-        # Validate API keys before initializing pipeline
         is_valid, error_msg = validate_api_keys(st.session_state.model_choice)
         if not is_valid:
-            st.error(f"⚠️ {error_msg}")
-            st.info("💡 **How to fix this on Streamlit Cloud:**\n\n"
+            st.error(f"{error_msg}")
+            st.info("**How to fix this on Streamlit Cloud:**\n\n"
                    "1. Go to your app dashboard\n"
                    "2. Click on 'Settings' → 'Secrets'\n"
                    "3. Add your API key in TOML format:\n"
@@ -568,7 +560,6 @@ def initialize_pipeline():
             st.session_state.pipeline_started = False
             return
         
-        # Create user prompt
         prompt = f"Evaluate the dataset '{st.session_state.dataset_name}' for data quality and fairness issues."
         if st.session_state.target_column:
             prompt += f" Target: {st.session_state.target_column}."
@@ -579,11 +570,9 @@ def initialize_pipeline():
         st.session_state.current_step = 0
         st.session_state.step_approved = {}
         
-        # Initialize pipeline with a spinner to show progress
         with st.spinner("Initializing pipeline..."):
             pipeline = DatasetEvaluationPipeline(use_api_model=st.session_state.model_choice)
         
-        # Set up pipeline properties
         pipeline.current_dataset = st.session_state.dataset_name
         pipeline.target_column = st.session_state.target_column
         pipeline.user_objective = prompt
@@ -606,12 +595,11 @@ def initialize_pipeline():
         st.rerun()
         
     except ValueError as ve:
-        # Catch API key errors specifically
-        st.error(f"⚠️ Configuration Error: {str(ve)}")
-        st.info("💡 Please check your API keys in Streamlit Secrets or .env file.")
+        st.error(f"Configuration Error: {str(ve)}")
+        st.info("Please check your API keys in Streamlit Secrets or .env file.")
         st.session_state.pipeline_started = False
     except Exception as e:
-        st.error(f"❌ Error initializing pipeline: {str(e)}")
+        st.error(f"Error initializing pipeline: {str(e)}")
         st.exception(e)
         st.session_state.pipeline_started = False
 
@@ -622,7 +610,6 @@ def display_pipeline_stepwise():
     if not pipeline or not results:
         return
     
-    # Display metadata
     with st.expander("Evaluation Metadata", expanded=True):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -635,7 +622,6 @@ def display_pipeline_stepwise():
     
     st.markdown("---")
     
-    # Define stages
     stages = [
         ("0_loading", "Dataset Loading"),
         ("1_objective", "Objective Inspection"),
@@ -648,19 +634,15 @@ def display_pipeline_stepwise():
     ]
     stages = [s for s in stages if s is not None]
     
-    # Display all completed stages first
     for idx, (stage_key, stage_name) in enumerate(stages):
         if idx < st.session_state.current_step and stage_key in results["stages"]:
             display_stage_results(stage_key, results["stages"][stage_key])
             st.markdown("---")
     
-    # Execute and display the current stage only
     if st.session_state.current_step < len(stages):
         stage_key, stage_name = stages[st.session_state.current_step]
         
-        # Intercept before Stage 4 (Imbalance) to ask for Confirmation & Proxy Config
         if stage_key == "4_imbalance" and stage_key not in results["stages"]:
-             # 1. Confirm Sensitive Columns
              sensitive_stage = results["stages"].get("3_sensitive", {})
              detected_cols = sensitive_stage.get("sensitive_columns", [])
              
@@ -676,7 +658,6 @@ def display_pipeline_stepwise():
                  )
                  st.session_state.confirmed_sensitive_columns = confirmed
              
-             # 2. Proxy Model Configuration
              with st.expander("Proxy Model Configuration (Optional)", expanded=True):
                  enable_proxy = st.checkbox("Enable Proxy Model Analysis for Fairness/F1", value=False)
                  
@@ -699,7 +680,6 @@ def display_pipeline_stepwise():
                  st.session_state.proxy_config = proxy_config
             
              
-             # Check if already confirmed in session state
              if 'stage_4_confirmed' not in st.session_state:
                  st.session_state.stage_4_confirmed = False
 
@@ -709,15 +689,12 @@ def display_pipeline_stepwise():
                      if st.button("Confirm & Run Analysis", type="primary", key="confirm_stage_4", use_container_width=True):
                          st.session_state.stage_4_confirmed = True
                          st.rerun()
-                 return # Stop here until confirmed
+                 return 
              else:
-                  # Optionally show a message that it's confirmed/running
                   st.info("Configuration confirmed. Running analysis...")
 
         
-        # Special handling for Stage 4.5 - ask for combination selection before execution
         if stage_key == "4_5_target_fairness" and stage_key not in results["stages"]:
-            # Get sensitive columns from previous stage
             sensitive_cols = []
             if "3_sensitive" in results["stages"]:
                 sensitive_cols = results["stages"]["3_sensitive"].get("sensitive_columns", [])
@@ -732,14 +709,11 @@ def display_pipeline_stepwise():
                 
                 possible_pairs = list(combinations(sensitive_cols, 2))
                 
-                # Initialize session state for checkboxes
                 if 'combo_selections' not in st.session_state:
                     st.session_state.combo_selections = {}
                 
-                # Display checkboxes for each combination
                 selected_pairs = []
                 
-                # Create columns for better layout (2 columns)
                 num_cols = 2
                 cols = st.columns(num_cols)
                 
@@ -747,7 +721,6 @@ def display_pipeline_stepwise():
                     col_idx = idx % num_cols
                     combo_key = f"{attr1}_{attr2}"
                     
-                    # Initialize checkbox state if not exists
                     if combo_key not in st.session_state.combo_selections:
                         st.session_state.combo_selections[combo_key] = False
                     
@@ -758,12 +731,10 @@ def display_pipeline_stepwise():
                             key=f"checkbox_{combo_key}"
                         )
                         
-                        # Update state and collect selected pairs
                         st.session_state.combo_selections[combo_key] = is_selected
                         if is_selected:
                             selected_pairs.append((attr1, attr2))
                 
-                # Show selection summary and generate button
                 st.markdown("---")
                 
                 if selected_pairs:
@@ -779,28 +750,23 @@ def display_pipeline_stepwise():
                 
                 with col3:
                     if st.button("Generate Analysis", type="primary", key="gen_stage_4_5", use_container_width=True, disabled=len(selected_pairs) == 0):
-                        # Execute stage with selected pairs
                         with st.spinner(f"Running {stage_name} for {len(selected_pairs)} combination(s)..."):
                             try:
-                                # Preserve pipeline directories before syncing
                                 report_dir = pipeline.report_dir
                                 images_dir = pipeline.images_dir
                                 
                                 pipeline.evaluation_results = results
                                 
-                                # Restore directories
                                 pipeline.report_dir = report_dir
                                 pipeline.images_dir = images_dir
                                 
-                                # Pass selected pairs to the stage
                                 stage_result = execute_stage_with_pairs(
                                     pipeline, stage_key, st.session_state.user_prompt,
                                     results.get('dataset'), results.get('target_column'),
-                                    selected_pairs, st.session_state.proxy_config  # Pass proxy config
+                                    selected_pairs, st.session_state.proxy_config 
                                 )
                                 results["stages"][stage_key] = stage_result
                                 
-                                # Clear selections after successful generation
                                 st.session_state.combo_selections = {}
                                 st.rerun()
                             except Exception as e:
@@ -808,13 +774,12 @@ def display_pipeline_stepwise():
                                 st.code(traceback.format_exc())
                                 return
                 
-                return  # Don't show continue button yet
+                return  
         
         if stage_key == "6_bias_mitigation" and stage_key not in results["stages"]:
             st.markdown("### Stage 6: Bias Mitigation")
             st.info("Apply bias mitigation techniques to generate balanced datasets")
             
-            # Check if we should show the mitigation options
             if 'show_mitigation_prompt' not in st.session_state:
                 st.session_state.show_mitigation_prompt = True
             
@@ -830,7 +795,6 @@ def display_pipeline_stepwise():
                         st.rerun()
                 with col3:
                     if st.button("No, skip this step", key="no_mitigation", use_container_width=True):
-                        # Create a result indicating skip
                         results["stages"]["6_bias_mitigation"] = {
                             "status": "skipped",
                             "message": "User chose to skip bias mitigation"
@@ -838,14 +802,12 @@ def display_pipeline_stepwise():
                         st.session_state.show_mitigation_prompt = False
                         st.rerun()
                 
-                return  # Don't proceed until user makes a choice
+                return 
             
-            # If user chose to apply mitigation, show the options
             if st.session_state.get('apply_mitigation', False):
                 st.markdown("---")
                 st.markdown("#### Select Bias Mitigation Methods")
                 
-                # Multi-method selection
                 selected_methods = st.multiselect(
                     "Select one or more mitigation techniques:",
                     options=["Reweighting", "SMOTE", "Random Oversampling", "Random Undersampling"],
@@ -862,14 +824,11 @@ def display_pipeline_stepwise():
                         st.rerun()
                     return
                 
-                # Get sensitive columns
                 sensitive_cols = []
                 if "3_sensitive" in results["stages"]:
                     sensitive_cols = results["stages"]["3_sensitive"].get("sensitive_columns", [])
                 
-                # Configure parameters for each selected method
                 st.markdown("#### Configure Methods")
-                
                 all_methods_config = {}
                 
                 for method in selected_methods:
@@ -937,7 +896,6 @@ def display_pipeline_stepwise():
                 
                 st.markdown("---")
                 
-                # Apply button
                 col1, col2, col3 = st.columns([2, 1, 1])
                 with col2:
                     if st.button("Cancel", key="cancel_mitigation", use_container_width=True):
@@ -946,7 +904,6 @@ def display_pipeline_stepwise():
                         st.rerun()
                 
                 with col3:
-                    # Check if all methods have valid parameters
                     can_apply = True
                     for method in selected_methods:
                         if method == "Reweighting" and not all_methods_config[method].get('sensitive_columns'):
@@ -954,14 +911,12 @@ def display_pipeline_stepwise():
                             break
                     
                     if st.button("Apply All Methods", type="primary", key="apply_all_btn", disabled=not can_apply, use_container_width=True):
-                        # Immediately mark stage as in-progress to prevent re-execution
                         if "6_bias_mitigation" not in results["stages"]:
                             results["stages"]["6_bias_mitigation"] = {
                                 "status": "in_progress",
                                 "message": "Processing..."
                             }
                         
-                        # Map method names to internal names
                         method_map = {
                             "Reweighting": "reweighting",
                             "SMOTE": "smote",
@@ -969,7 +924,6 @@ def display_pipeline_stepwise():
                             "Random Undersampling": "undersampling"
                         }
                         
-                        # Progress tracking
                         progress_bar = st.progress(0)
                         status_text = st.empty()
                         
@@ -981,7 +935,6 @@ def display_pipeline_stepwise():
                             try:
                                 method_params = all_methods_config[method]
                                 
-                                # Apply mitigation
                                 mitigation_result = pipeline.apply_bias_mitigation(
                                     method=method_map[method],
                                     dataset_name=results.get('dataset'),
@@ -990,7 +943,6 @@ def display_pipeline_stepwise():
                                     **{k: v for k, v in method_params.items() if k != 'sensitive_columns'}
                                 )
                                 
-                                # Compare results if successful
                                 if mitigation_result.get("status") == "success":
                                     comparison_result = pipeline.compare_mitigation_results(
                                         original_dataset=results.get('dataset'),
@@ -1004,7 +956,7 @@ def display_pipeline_stepwise():
                                         "method_params": method_params,
                                         "mitigation_result": mitigation_result,
                                         "comparison_result": comparison_result,
-                                        "fairness_comparison": mitigation_result.get("fairness_comparison")  # NEW: Include fairness comparison
+                                        "fairness_comparison": mitigation_result.get("fairness_comparison")
                                     }
                                 else:
                                     all_results[method] = {
@@ -1023,7 +975,6 @@ def display_pipeline_stepwise():
                         status_text.empty()
                         progress_bar.empty()
                         
-                        # Store all results
                         results["stages"]["6_bias_mitigation"] = {
                             "status": "success",
                             "methods": all_results,
@@ -1031,12 +982,11 @@ def display_pipeline_stepwise():
                         }
                         
                         st.session_state.apply_mitigation = False
-                        st.success(f"✓ Successfully applied {len(selected_methods)} method(s)!")
+                        st.success(f"Successfully applied {len(selected_methods)} method(s)!")
                         st.rerun()
                 
                 return 
         
-        # Execute stage if not already done
         if stage_key not in results["stages"]:
             with st.spinner(f"Running {stage_name}..."):
                 try:
@@ -1045,7 +995,6 @@ def display_pipeline_stepwise():
                     
                     pipeline.evaluation_results = results
                     
-                    # Restore directories
                     pipeline.report_dir = report_dir
                     pipeline.images_dir = images_dir
                     
@@ -1059,10 +1008,8 @@ def display_pipeline_stepwise():
                     st.code(traceback.format_exc())
                     return
         
-        # Display current stage results
         display_stage_results(stage_key, results["stages"][stage_key])
         
-        # Show continue button if not the last stage
         if st.session_state.current_step < len(stages) - 1:
             col1, col2, col3 = st.columns([2, 1, 1])
             with col3:
@@ -1070,12 +1017,10 @@ def display_pipeline_stepwise():
                     st.session_state.current_step += 1
                     st.rerun()
     
-    # If all stages are complete, show completion message
     if st.session_state.current_step >= len(stages) - 1 and len(results["stages"]) == len(stages):
         st.markdown("---")
         st.success("Evaluation completed successfully!")
         
-        # Generate final reports
         if "final_reports_generated" not in results:
             with st.spinner("Generating reports..."):
                 try:
@@ -1128,7 +1073,6 @@ def display_stage_results(stage_key, stage_result):
     
     st.markdown(f"### {stage_names.get(stage_key, stage_key)}")
     
-    # Special display for Stage 6 (Bias Mitigation)
     if stage_key == "6_bias_mitigation":
         if stage_result.get("status") == "skipped":
             st.info("Bias mitigation was skipped by user.")
@@ -1137,19 +1081,15 @@ def display_stage_results(stage_key, stage_result):
             st.error(f"Error applying {stage_result.get('method', 'mitigation')}: {stage_result.get('error', 'Unknown error')}")
             return
         elif stage_result.get("status") == "success":
-            # Check if multiple methods were applied
             if "methods" in stage_result:
-                # Multi-method display
                 methods_results = stage_result["methods"]
                 applied_methods = stage_result.get("applied_methods", list(methods_results.keys()))
                 
                 st.success(f"Successfully applied {len(applied_methods)} method(s)!")
                 
-                # Create comparison dashboard first
                 st.markdown("---")
                 st.markdown("### Methods Comparison Dashboard")
                                 
-                # Collect comparison metrics
                 comparison_data = []
                 successful_methods = {}
                 
@@ -1184,7 +1124,6 @@ def display_stage_results(stage_key, stage_result):
                     df_comparison = pd.DataFrame(comparison_data)
                     st.dataframe(df_comparison, width="stretch", hide_index=True)
                     
-                    # Best method recommendation
                     best_method = None
                     best_ratio = float('inf')
                     for method in applied_methods:
@@ -1202,7 +1141,6 @@ def display_stage_results(stage_key, stage_result):
                 else:
                     st.warning("No successful methods to compare.")
                 
-                # Individual method results in dropdowns
                 st.markdown("---")
                 st.markdown("### Individual Method Results")
                 
@@ -1217,7 +1155,6 @@ def display_stage_results(stage_key, stage_result):
                         mitigation_result = method_result.get("mitigation_result", {})
                         comparison_result = method_result.get("comparison_result", {})
                         
-                        # Summary metrics
                         st.markdown("#### Summary")
                         col1, col2, col3, col4 = st.columns(4)
                         
@@ -1242,7 +1179,6 @@ def display_stage_results(stage_key, stage_result):
                                 st.metric("Output File", "✓")
                                 st.caption(filename)
                         
-                        # Distribution comparison
                         st.markdown("---")
                         st.markdown("#### Target Distribution Comparison")
                         
@@ -1250,7 +1186,6 @@ def display_stage_results(stage_key, stage_result):
                         dist_after = mitigation_result.get("distribution_after", dist_before)
                         
                         if dist_before and dist_after:
-                            # Create comparison dataframe
                             all_values = set(dist_before.keys()) | set(dist_after.keys())
                             dist_comparison_data = []
                             
@@ -1272,7 +1207,6 @@ def display_stage_results(stage_key, stage_result):
                             df_dist = pd.DataFrame(dist_comparison_data)
                             st.dataframe(df_dist, width="stretch", hide_index=True)
                         
-                        # Imbalance metrics
                         if comparison_result.get("imbalance_metrics"):
                             st.markdown("---")
                             st.markdown("#### Imbalance Improvement")
@@ -1297,7 +1231,6 @@ def display_stage_results(stage_key, stage_result):
                                 else:
                                     st.warning("No Improvement")
                         
-                        # Fairness comparison (if available)
                         if method_result.get("fairness_comparison"):
                             st.markdown("---")
                             _render_fairness_comparison_board(
@@ -1305,13 +1238,11 @@ def display_stage_results(stage_key, stage_result):
                                 method_name=method
                             )
                         
-                        # Agent analysis
                         if comparison_result.get("agent_analysis"):
                             st.markdown("---")
                             st.markdown("#### Agent Analysis")
                             st.markdown(comparison_result["agent_analysis"])
                         
-                        # Download button for generated CSV
                         if output_file and os.path.exists(output_file):
                             st.markdown("---")
                             with open(output_file, 'rb') as f:
@@ -1323,14 +1254,11 @@ def display_stage_results(stage_key, stage_result):
                                     key=f"download_{method.replace(' ', '_')}"
                                 )
             else:
-                # Single method display (backward compatibility)
                 st.success(f"{stage_result.get('method', 'Bias mitigation')} applied successfully!")
                 
-                # Display mitigation results
                 mitigation_result = stage_result.get("mitigation_result", {})
                 comparison_result = stage_result.get("comparison_result", {})
                 
-                # Summary metrics
                 st.markdown("#### Summary")
                 col1, col2, col3, col4 = st.columns(4)
                 
@@ -1383,7 +1311,6 @@ def display_stage_results(stage_key, stage_result):
                     df_comparison = pd.DataFrame(comparison_data)
                     st.dataframe(df_comparison, width="stretch", hide_index=True)
                 
-                # Imbalance metrics
                 if comparison_result.get("imbalance_metrics"):
                     st.markdown("---")
                     st.markdown("#### Imbalance Improvement")
@@ -1408,14 +1335,12 @@ def display_stage_results(stage_key, stage_result):
                         else:
                             st.warning("No Improvement")
                 
-                # Agent analysis
                 if comparison_result.get("agent_analysis"):
                     st.markdown("---")
                     st.markdown("#### Agent Analysis")
                     with st.expander("View Detailed Analysis", expanded=True):
                         st.markdown(comparison_result["agent_analysis"])
                 
-                # Download button for generated CSV
                 if output_file and os.path.exists(output_file):
                     st.markdown("---")
                     with open(output_file, 'rb') as f:
@@ -1429,7 +1354,6 @@ def display_stage_results(stage_key, stage_result):
             
             return
     
-    # Display tool result if available
     if "tool_result" in stage_result:
         tool_result = stage_result["tool_result"]
         
@@ -1457,20 +1381,16 @@ def display_stage_results(stage_key, stage_result):
             with st.expander("Tool Result"):
                 st.json(tool_result)
     
-    # Special display for Stage 5 (Recommendations)
     if stage_key == "5_recommendations" and "recommendations" in stage_result:
         with st.expander("Recommendations", expanded=True):
             st.markdown(stage_result["recommendations"])
     
-    # Display agent analysis
     if "agent_analysis" in stage_result:
         analysis_text = stage_result["agent_analysis"]
         
         if analysis_text and str(analysis_text).strip():
-            # Special formatting for Stage 3 (Sensitive Attribute Detection)
             if stage_key == "3_sensitive":
                 
-                # Display column summary first in expander
                 if "simplified_summary" in stage_result:
                     with st.expander("Column Summary Table"):
                         summary_text = stage_result["simplified_summary"]
@@ -1478,7 +1398,6 @@ def display_stage_results(stage_key, stage_result):
                         
                         data_lines = []
                         for line in lines:
-                            # Filter out headers and separators more robustly
                             if line and not line.startswith('=') and not line.startswith('COLUMN') and not ('Column' in line and 'Type' in line):
                                 if not all(c in '= \t' for c in line):
                                     data_lines.append(line)
@@ -1503,7 +1422,6 @@ def display_stage_results(stage_key, stage_result):
                         else:
                             st.text(summary_text)
                 
-                # Parse sensitive attributes
                 pattern = r'Column:\s*([^\|]+)\s*\|\s*Reason:\s*([^\|]+)\s*\|\s*Values:\s*(.+?)(?=Column:|$)'
                 matches = re.findall(pattern, analysis_text, re.DOTALL)
                 
@@ -1524,15 +1442,11 @@ def display_stage_results(stage_key, stage_result):
                     st.info(f"Total: {len(table_data)} sensitive attributes identified")
             
             else:
-                # Default display for other stages (including Stage 0, 1, 2, 4, 4.5, 5)
                 st.markdown("---")
                 stage_name = stage_names.get(stage_key, stage_key).split(':')[0]
                 with st.expander(f"Agent Analysis - {stage_name}", expanded=True):
                     st.markdown(analysis_text)
 
-
-
-    # For stage 1 which has different structure
     if stage_key == "1_objective" and "objective" in stage_result:
         st.info(f"**Objective:** {stage_result['objective']}")
         st.write(f"**Audit Request:** {'Yes' if stage_result.get('is_audit_request') else 'No'}")
@@ -1548,12 +1462,10 @@ def _render_fairness_board(proxy_results: dict, title: str = "Fairness Metrics B
     
     fairness = proxy_results.get("fairness_analysis", {})
     if fairness:
-        # Create tabs for each attribute/combination
         tabs = st.tabs([col.replace("_combined", "").replace("_", " + ") for col in fairness.keys()])
         
         for idx, (col_name, data) in enumerate(fairness.items()):
             with tabs[idx]:
-                # Display Stat Parity and Disparate Impact
                 metrics_data = data.get("metrics", {})
                 m_col1, m_col2, m_col3 = st.columns(3)
                 with m_col1:
@@ -1571,17 +1483,14 @@ def _render_fairness_board(proxy_results: dict, title: str = "Fairness Metrics B
                         help="Ratio of min to max selection rate. Should be close to 1.0. <0.8 indicates potential discrimination (80% rule)."
                     )
                 with m_col3:
-                    # Show which groups have max/min rates
                     max_group = metrics_data.get('max_positive_rate_group', 'N/A')
                     min_group = metrics_data.get('min_positive_rate_group', 'N/A')
                     if max_group != 'N/A' and min_group != 'N/A':
                         st.caption(f"**Highest Rate:** {max_group}")
                         st.caption(f"**Lowest Rate:** {min_group}")
 
-                # Display Group Metrics
                 groups_data = data.get("groups", {})
                 
-                # Flatten for display
                 rows = []
                 for group, metrics in groups_data.items():
                     row = {
@@ -1598,10 +1507,8 @@ def _render_fairness_board(proxy_results: dict, title: str = "Fairness Metrics B
                     }
                     rows.append(row)
                 
-                # Formatting for display
                 display_df = pd.DataFrame(rows)
                 
-                # Configure columns for better visualization
                 st.dataframe(
                     display_df, 
                     hide_index=True,
@@ -1620,7 +1527,6 @@ def _render_fairness_board(proxy_results: dict, title: str = "Fairness Metrics B
                     }
                 )
                 
-                # Calculate FNR Ratio if FNR is available
                 fnrs = [r["FNR"] for r in rows if isinstance(r["FNR"], (int, float))]
                 if fnrs and len(fnrs) > 1 and min(fnrs) > 0:
                     max_fnr = max(fnrs)
@@ -1628,7 +1534,6 @@ def _render_fairness_board(proxy_results: dict, title: str = "Fairness Metrics B
                     ratio = max_fnr / min_fnr
                     st.metric("Max/Min FNR Ratio", f"{ratio:.2f}", help="Ratio of highest to lowest False Negative Rate. > 1.25 indicates significant disparity.")
                 
-                # Max/Min F1
                 f1s = [r["F1 Score"] for r in rows if isinstance(r["F1 Score"], (int, float))]
                 if f1s:
                     st.caption(f"F1 Range: {min(f1s):.2f} - {max(f1s):.2f}")
@@ -1639,7 +1544,6 @@ def _render_fairness_comparison_board(comparison_data, method_name="Mitigation M
         st.warning(f"Fairness comparison not available: {comparison_data.get('message', 'Unknown error')}")
         return
     
-    # Validate we have comparison data to display
     per_attr_comparison = comparison_data.get("per_attribute_comparison", {})
     if not per_attr_comparison:
         st.info(f"No fairness comparison data available for {method_name}")
@@ -1647,7 +1551,6 @@ def _render_fairness_comparison_board(comparison_data, method_name="Mitigation M
     
     st.markdown(f"### Fairness Metrics Comparison: {method_name}")
     
-    # Overall improvement summary
     overall_improvement = comparison_data.get("overall_improvement", "Unknown")
     
     if overall_improvement == "Significant":
@@ -1661,35 +1564,30 @@ def _render_fairness_comparison_board(comparison_data, method_name="Mitigation M
     
     st.markdown("---")
     
-    # Per-attribute comparison
     per_attr_comparison = comparison_data.get("per_attribute_comparison", {})
     
     if not per_attr_comparison:
         st.info("No attribute-level comparison data available")
         return
     
-    # Create tabs for each sensitive attribute
     attr_tabs = st.tabs([attr.replace("_", " ").title() for attr in per_attr_comparison.keys()])
     
     for idx, (attr_name, attr_data) in enumerate(per_attr_comparison.items()):
         with attr_tabs[idx]:
             st.markdown(f"#### {attr_name.replace('_', ' ').title()}")
             
-            # Statistical Parity Difference comparison
             spd_data = attr_data.get("statistical_parity_difference", {})
             spd_baseline = spd_data.get("baseline", 0)
             spd_mitigated = spd_data.get("mitigated", 0)
             spd_change = spd_data.get("change", 0)
             spd_improved = spd_data.get("improved", False)
             
-            # Disparate Impact comparison
             di_data = attr_data.get("disparate_impact", {})
             di_baseline = di_data.get("baseline", 0)
             di_mitigated = di_data.get("mitigated", 0)
             di_change = di_data.get("change", 0)
             di_improved = di_data.get("improved", False)
             
-            # Display metrics in columns
             col1, col2, col3 = st.columns(3)
             
             with col1:
@@ -1709,7 +1607,6 @@ def _render_fairness_comparison_board(comparison_data, method_name="Mitigation M
             with col3:
                 st.markdown("**Change**")
                 
-                # SPD change (positive = improvement, closer to 0)
                 if spd_improved:
                     st.metric("SPD Change", f"{spd_change:+.4f}", 
                              delta=f"↓ {abs(spd_change):.4f}",
@@ -1721,7 +1618,6 @@ def _render_fairness_comparison_board(comparison_data, method_name="Mitigation M
                              delta_color="inverse",
                              help="Negative change = degradation (farther from 0)")
                 
-                # DI change (positive = improvement, closer to 1)
                 if di_improved:
                     st.metric("DI Change", f"{di_change:+.4f}",
                              delta=f"↑ {abs(di_change):.4f}",
@@ -1733,7 +1629,6 @@ def _render_fairness_comparison_board(comparison_data, method_name="Mitigation M
                              delta_color="inverse",
                              help="Negative change = degradation (farther from 1.0)")
             
-            # Interpretation
             st.markdown("---")
             st.markdown("**Interpretation:**")
             
@@ -1875,17 +1770,14 @@ def display_fairness_results(stage_result):
 def run_pipeline_evaluation():
     with st.spinner("Initializing pipeline..."):
         try:
-            # Create user prompt
             prompt = f"Evaluate the dataset '{st.session_state.dataset_name}' for data quality and fairness issues."
             if st.session_state.target_column:
                 prompt += f" Target: {st.session_state.target_column}."
             prompt += " Provide a detailed report highlighting any problems found and suggestions for improvement."
             
-            # Initialize pipeline
             pipeline = DatasetEvaluationPipeline(use_api_model=st.session_state.model_choice)
             st.session_state.pipeline = pipeline
             
-            # Run evaluation
             results = pipeline.evaluate_dataset(prompt)
             st.session_state.evaluation_results = results
             st.session_state.current_step = 0
@@ -1903,7 +1795,6 @@ def display_pipeline_results():
     if not results:
         return
     
-    # Display metadata
     with st.expander("Evaluation Metadata", expanded=True):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -1919,17 +1810,14 @@ def display_pipeline_results():
     
     st.markdown("---")
     
-    # Display stages
     stages = results.get("stages", {})
     stage_keys = sorted(stages.keys())
     
     for idx, stage_key in enumerate(stage_keys):
         stage_data = stages[stage_key]
         
-        # Display stage
         display_stage_results(stage_key, stage_data)
         
-        # Add continue button for each step (except last)
         if idx < len(stage_keys) - 1:
             if stage_key not in st.session_state.step_approved:
                 col1, col2 = st.columns([3, 1])
@@ -1938,7 +1826,6 @@ def display_pipeline_results():
                         st.session_state.step_approved[stage_key] = True
                         st.rerun()
                 
-                # Don't show next stages until approved
                 break
         
         st.markdown("---")
@@ -1954,7 +1841,7 @@ def parse_report_file(filepath):
     
     lines = content.split('\n')
     header_info = {}
-    for i, line in enumerate(lines[:30]):  # Check first 30 lines
+    for i, line in enumerate(lines[:30]): 
         if 'Dataset:' in line:
             header_info['dataset'] = line.split('Dataset:')[1].strip()
         elif 'Timestamp:' in line:
@@ -2049,19 +1936,15 @@ def display_parsed_report(filepath, report_type="Full Report"):
                         if '[PROXY MODEL RESULTS]' in section or '[INTERSECTIONAL PROXY RESULTS]' in section:
                             
                             
-                            # More robust JSON extraction - find the complete JSON block
                             def extract_json_block(text, start_marker):
-                                """Extract a complete JSON object after a marker"""
                                 try:
                                     start_idx = text.find(start_marker)
                                     if start_idx == -1:
                                         return None
                                     
-                                    # Start after the marker
                                     json_start = start_idx + len(start_marker)
                                     remaining = text[json_start:].strip()
                                     
-                                    # Find where the JSON ends (next section marker or end of text)
                                     next_section = re.search(r'\n\n\[', remaining)
                                     if next_section:
                                         json_text = remaining[:next_section.start()].strip()
@@ -2072,7 +1955,6 @@ def display_parsed_report(filepath, report_type="Full Report"):
                                 except Exception:
                                     return None
                             
-                            # Try to extract proxy model results
                             if '[PROXY MODEL RESULTS]' in section:
                                 proxy_json = extract_json_block(section, '[PROXY MODEL RESULTS]')
                                 if proxy_json:
@@ -2089,7 +1971,6 @@ def display_parsed_report(filepath, report_type="Full Report"):
                                     except Exception as e:
                                         st.warning(f"Error displaying proxy model results: {type(e).__name__}: {str(e)}")
                             
-                            # Try to extract intersectional proxy results
                             if '[INTERSECTIONAL PROXY RESULTS]' in section:
                                 intersect_json = extract_json_block(section, '[INTERSECTIONAL PROXY RESULTS]')
                                 if intersect_json:
@@ -2106,7 +1987,6 @@ def display_parsed_report(filepath, report_type="Full Report"):
                                     except Exception as e:
                                         st.warning(f"Error displaying intersectional results: {type(e).__name__}: {str(e)}")
                             
-                            # Try to extract mitigation results
                             if '[MITIGATION RESULTS]' in section:
                                 mit_json = extract_json_block(section, '[MITIGATION RESULTS]')
                                 if mit_json:
@@ -2115,7 +1995,6 @@ def display_parsed_report(filepath, report_type="Full Report"):
                                         if mit_data and isinstance(mit_data, dict):
                                             st.markdown("### Mitigation Results")
                                             
-                                            # Display basic metrics summary
                                             m_col1, m_col2, m_col3, m_col4 = st.columns(4)
                                             with m_col1:
                                                 st.metric("Method", mit_data.get("method", "Unknown"))
@@ -2130,7 +2009,6 @@ def display_parsed_report(filepath, report_type="Full Report"):
                                     except Exception as e:
                                         st.warning(f"Error displaying mitigation results: {str(e)}")
 
-                            # Try to extract mitigation comparison results
                             if '[COMPARISON RESULTS]' in section:
                                 comp_json = extract_json_block(section, '[COMPARISON RESULTS]')
                                 if comp_json:
@@ -2138,7 +2016,6 @@ def display_parsed_report(filepath, report_type="Full Report"):
                                         comp_data = json.loads(comp_json)
                                         if comp_data and isinstance(comp_data, dict):
                                             
-                                            # Display Imbalance Metrics
                                             if "imbalance_metrics" in comp_data:
                                                 st.markdown("#### Imbalance Improvement")
                                                 imb_metrics = comp_data["imbalance_metrics"]
@@ -2158,29 +2035,24 @@ def display_parsed_report(filepath, report_type="Full Report"):
                                                     else:
                                                         st.warning("No Improvement")
                                             
-                                            # Display Target Distribution
                                             if "target_distribution" in comp_data:
                                                 st.markdown("#### Target Distribution Comparison")
                                                 target_dist_data = comp_data["target_distribution"]
                                                 
                                                 if target_dist_data:
                                                     comparison_rows = []
-                                                    # Sort classes for consistent display
                                                     sorted_classes = sorted(target_dist_data.keys())
                                                     
                                                     for cls in sorted_classes:
                                                         stats = target_dist_data[cls]
-                                                        # Handle both weighted and unweighted structures
                                                         orig_count = stats.get("original_count", 0)
                                                         orig_pct = stats.get("original_percentage", 0)
                                                         
                                                         if "mitigated_weighted_count" in stats:
-                                                            # Weighted results
                                                             mit_count = stats.get("mitigated_weighted_count", 0)
                                                             mit_pct = stats.get("mitigated_weighted_percentage", 0)
                                                             change = stats.get("weighted_change", 0)
                                                         else:
-                                                            # Regular results
                                                             mit_count = stats.get("mitigated_count", 0)
                                                             mit_pct = stats.get("mitigated_percentage", 0)
                                                             change = stats.get("change", 0)
@@ -2197,14 +2069,13 @@ def display_parsed_report(filepath, report_type="Full Report"):
                                                     st.dataframe(pd.DataFrame(comparison_rows), width="stretch", hide_index=True)
                                             
                                     except Exception as e:
-                                        st.warning(f"Error displaying mitigation comparison: {str(e)}")                            # Try to extract fairness comparison results
+                                        st.warning(f"Error displaying mitigation comparison: {str(e)}")                           
                             if '[FAIRNESS COMPARISON]' in section:
                                 comparison_json = extract_json_block(section, '[FAIRNESS COMPARISON]')
                                 if comparison_json:
                                     try:
                                         comparison_data = json.loads(comparison_json)
                                         if comparison_data and isinstance(comparison_data, dict):
-                                            # Validate we have the required comparison data structure
                                             if "per_attribute_comparison" in comparison_data and comparison_data["per_attribute_comparison"]:
                                                 method_name = comparison_data.get("method", "Mitigation Method")
                                                 st.markdown("---")
@@ -2225,7 +2096,6 @@ def display_parsed_report(filepath, report_type="Full Report"):
                                             st.code(traceback.format_exc())
                         
                         if '[TOOL RESULT]' in section and '[AGENT ANALYSIS]' in section:
-                            # Split tool result and analysis
                             parts = section.split('[TOOL RESULT]')
                             tool_name = parts[0].strip()
                             
@@ -2250,7 +2120,6 @@ def display_parsed_report(filepath, report_type="Full Report"):
                             st.markdown(parts[1].strip())
                         
                         elif '[TOOL RESULT]' in section and '[PROXY MODEL RESULTS]' not in section:
-                            # Display tool result without proxy model results
                             parts = section.split('[TOOL RESULT]')
                             tool_name = parts[0].strip()
                             if tool_name:
@@ -2260,12 +2129,10 @@ def display_parsed_report(filepath, report_type="Full Report"):
                                     st.code(parts[1].strip(), language='json')
                 
                 elif '[RECOMMENDATIONS]' in stage_content:
-                    # Special handling for recommendations
                     parts = stage_content.split('[RECOMMENDATIONS]')
                     st.markdown(parts[1].strip() if len(parts) > 1 else stage_content)
                 
                 else:
-                    # Simple content
                     st.markdown(stage_content)
     else:
         st.warning("No stages found in report")
@@ -2289,7 +2156,6 @@ def view_results_page():
     if selected_report:
         report_dir = os.path.join(BASE_DIR, "reports", selected_report)
         
-        # Display report files
         report_file = os.path.join(report_dir, "evaluation_report.txt")
         summary_file = os.path.join(report_dir, "agent_summary.txt")
         
@@ -2484,7 +2350,6 @@ def view_results_page():
                                     else:
                                         st.info(f"No fairness comparison available for {method} (baseline metrics may not have been generated)")
                                     
-                                    # Agent Analysis - AFTER Fairness Metrics Comparison
                                     method_upper = method.upper()
                                     if method_upper in methods_analysis:
                                         st.markdown("---")
