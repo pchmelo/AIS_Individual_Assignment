@@ -532,7 +532,6 @@ class FairnessTools(ToolManager):
                 "percentages": target_pct.to_dict()
             }
             
-            # Generate target distribution histogram
             plt.figure(figsize=(10, 6))
             ax = sns.countplot(data=df, x=target_column)
             plt.title(f"{target_column} Distribution", fontsize=14, pad=15)
@@ -545,7 +544,6 @@ class FairnessTools(ToolManager):
             plt.close()
             result["generated_images"].append(img_path)
             
-            # 2. Group proportions for each sensitive attribute
             for sensitive_col in sensitive_columns:
                 group_counts = df[sensitive_col].value_counts()
                 group_pct = (group_counts / len(df) * 100).round(2)
@@ -554,14 +552,12 @@ class FairnessTools(ToolManager):
                     "percentages": group_pct.to_dict()
                 }
             
-            # Generate multiple histograms for sensitive attributes
             n_cols = len(sensitive_columns)
             fig, axes = plt.subplots(1, n_cols, figsize=(10*n_cols, 6))
             if n_cols == 1:
                 axes = [axes]
             
             for idx, sensitive_col in enumerate(sensitive_columns):
-                # Count unique values to adjust figure size
                 n_unique = df[sensitive_col].nunique()
                 
                 sns.countplot(data=df, x=sensitive_col, ax=axes[idx])
@@ -569,7 +565,6 @@ class FairnessTools(ToolManager):
                 axes[idx].set_xlabel(sensitive_col, fontsize=10)
                 axes[idx].set_ylabel("Count", fontsize=10)
                 
-                # Rotate labels if many categories
                 if n_unique > 5:
                     axes[idx].tick_params(axis='x', rotation=90)
                     for label in axes[idx].get_xticklabels():
@@ -587,7 +582,6 @@ class FairnessTools(ToolManager):
             plt.close()
             result["generated_images"].append(img_path)
             
-            # 3. Target distribution by sensitive groups
             fig, axes = plt.subplots(1, n_cols, figsize=(10*n_cols, 6))
             if n_cols == 1:
                 axes = [axes]
@@ -600,7 +594,6 @@ class FairnessTools(ToolManager):
                 axes[idx].set_xlabel(sensitive_col, fontsize=10)
                 axes[idx].set_ylabel("Count", fontsize=10)
                 
-                # Rotate labels if many categories
                 if n_unique > 5:
                     axes[idx].tick_params(axis='x', rotation=90)
                     for label in axes[idx].get_xticklabels():
@@ -612,7 +605,6 @@ class FairnessTools(ToolManager):
                         label.set_rotation(45)
                         label.set_ha('right')
                 
-                # Position legend outside plot area
                 axes[idx].legend(title=target_column, bbox_to_anchor=(1.05, 1), loc='upper left')
             
             plt.tight_layout()
@@ -621,7 +613,6 @@ class FairnessTools(ToolManager):
             plt.close()
             result["generated_images"].append(img_path)
             
-            # 4. Target rates by group
             for sensitive_col in sensitive_columns:
                 group_target_rates = {}
                 for group_value in df[sensitive_col].unique():
@@ -635,7 +626,6 @@ class FairnessTools(ToolManager):
                     }
                 result["target_rates_by_group"][sensitive_col] = group_target_rates
             
-            # 5. Combined sensitive groups analysis - Generate for selected pairs only
             if len(sensitive_columns) >= 2:                
                 if selected_pairs:
                     sensitive_pairs = [
@@ -659,48 +649,36 @@ class FairnessTools(ToolManager):
                         "percentages": combined_pct.to_dict()
                     }
                     
-                    # Create subdirectory for this combination
                     combined_dir = os.path.join(output_dir, f"{col1}_{col2}_combinations")
                     os.makedirs(combined_dir, exist_ok=True)
                     
-                    # Group combinations by count ranges for better visualization
                     sorted_counts = combined_counts.sort_values(ascending=False)
                     max_count = sorted_counts.iloc[0]
                     
-                    # Define scale groups (relative to max)
                     scale_groups = {
                         'high': sorted_counts[sorted_counts >= max_count * 0.1],  # >= 10% of max
                         'medium': sorted_counts[(sorted_counts >= max_count * 0.01) & (sorted_counts < max_count * 0.1)],  # 1-10% of max
                         'low': sorted_counts[sorted_counts < max_count * 0.01]  # < 1% of max
                     }
                     
-                    # Filter out empty groups
                     scale_groups = {k: v for k, v in scale_groups.items() if len(v) > 0}
                     
-                    # Create separate plots for each scale group
                     for scale_name, group_data in scale_groups.items():
                         if len(group_data) == 0:
                             continue
                         
-                        # Filter dataframe to only include categories in this scale group
                         df_filtered = df[df[combined_col].isin(group_data.index)]
                         
                         if len(df_filtered) == 0:
                             continue
                         
-                        # Calculate figure width based on number of categories
                         n_categories = len(group_data)
                         fig_width = max(16, min(n_categories * 0.6, 24))
                         
-                        # Create plot
                         fig, ax = plt.subplots(figsize=(fig_width, 10))
-                        
-                        # Order categories by count
                         order = group_data.index.tolist()
-                        
                         sns.countplot(data=df_filtered, x=combined_col, hue=target_column, order=order, ax=ax)
                         
-                        # Set detailed title
                         count_range = f"{int(group_data.min())}-{int(group_data.max())}"
                         title = f"Target: {target_column}\n"
                         title += f"Analyzed by: {col1} & {col2}\n"
@@ -711,32 +689,25 @@ class FairnessTools(ToolManager):
                                      fontsize=13, fontweight='bold', labelpad=10)
                         ax.set_ylabel("Count", fontsize=13, fontweight='bold')
                         
-                        # Clear x-axis labels and use them as individual labels
                         ax.set_xticklabels([])
                         ax.set_xlabel("")
                         
-                        # Add individual bar group labels with category name
                         positions = range(len(order))
                         for pos, category in zip(positions, order):
-                            # Split category for better readability
                             parts = category.split('_')
                             label_text = f"{parts[0]}\n{parts[1]}" if len(parts) == 2 else category
                             ax.text(pos, -max(ax.get_ylim()) * 0.15, label_text, 
                                    ha='center', va='top', fontsize=9, fontweight='bold')
                         
-                        # Add value labels on bars
                         for container in ax.containers:
                             ax.bar_label(container, fontsize=8, padding=3, fontweight='bold')
                         
-                        # Position legend
                         ax.legend(title=f"{target_column} Values", bbox_to_anchor=(1.02, 1), 
                                  loc='upper left', fontsize=11, title_fontsize=12, frameon=True, shadow=True)
                         
-                        # Add grid
                         ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.7)
                         ax.set_axisbelow(True)
                         
-                        # Adjust layout to accommodate labels
                         plt.subplots_adjust(bottom=0.15)
                         plt.tight_layout()
                         
@@ -745,11 +716,9 @@ class FairnessTools(ToolManager):
                         plt.close()
                         result["generated_images"].append(img_path)
                     
-                    # Additionally, create individual graphs for each combination
                     individual_dir = os.path.join(combined_dir, "individual_combinations")
                     os.makedirs(individual_dir, exist_ok=True)
                     
-                    # Create a graph for each combination (limit to top 50 to avoid too many files)
                     top_combinations = sorted_counts.head(50)
                     
                     for combination in top_combinations.index:
@@ -758,7 +727,6 @@ class FairnessTools(ToolManager):
                         if len(combo_df) == 0:
                             continue
                         
-                        # Create individual plot
                         fig, ax = plt.subplots(figsize=(10, 7))
                         
                         target_dist = combo_df[target_column].value_counts()
@@ -768,7 +736,6 @@ class FairnessTools(ToolManager):
                         ax.set_xticks(range(len(target_dist)))
                         ax.set_xticklabels(target_dist.index, fontsize=12, fontweight='bold')
                         
-                        # Clear title showing what's being analyzed
                         parts = combination.split('_')
                         title = f"Target Distribution: {target_column}\n"
                         title += f"{col1}: {parts[0]}\n"
@@ -779,7 +746,6 @@ class FairnessTools(ToolManager):
                         ax.set_xlabel(f"{target_column} Values", fontsize=12, fontweight='bold')
                         ax.set_ylabel("Count", fontsize=12, fontweight='bold')
                         
-                        # Add value labels on bars
                         for bar in bars:
                             height = bar.get_height()
                             percentage = (height / len(combo_df) * 100)
@@ -787,14 +753,11 @@ class FairnessTools(ToolManager):
                                    f'{int(height)}\n({percentage:.1f}%)',
                                    ha='center', va='bottom', fontsize=10, fontweight='bold')
                         
-                        # Add grid
                         ax.grid(axis='y', alpha=0.3, linestyle='--')
                         ax.set_axisbelow(True)
                         
                         plt.tight_layout()
                         
-                        # Safe filename - remove/replace invalid Windows filename characters
-                        # Invalid chars: < > : " / \ | ? *
                         safe_name = combination.replace('<', 'lt').replace('>', 'gt').replace(':', '-')
                         safe_name = safe_name.replace('"', '').replace('/', '-').replace('\\', '-')
                         safe_name = safe_name.replace('|', '-').replace('?', '').replace('*', '')
@@ -805,7 +768,6 @@ class FairnessTools(ToolManager):
                         plt.close()
                         result["generated_images"].append(img_path)
                     
-                    # Target rates for combined groups of this pair
                     combined_target_rates = {}
                     for group_value in df[combined_col].unique():
                         group_df = df[df[combined_col] == group_value]
@@ -836,7 +798,6 @@ class FairnessTools(ToolManager):
         try:
             path = self._resolve_path(dataset_name)
             
-            # Load and preprocess
             na_values = ['?', 'NA', 'N/A', 'n/a', 'na', 'NULL', 'null', 'None', 'none', 
                         '', ' ', 'NaN', 'nan', '--', '..', 'missing', 'Missing', 
                         'unknown', 'Unknown', 'UNKNOWN', 'undefined', 'Undefined']
@@ -846,58 +807,40 @@ class FairnessTools(ToolManager):
             if target_column not in df.columns:
                 return {"status": "error", "message": f"Target column '{target_column}' not found"}
             
-            # Handle minimal preprocessing for the proxy model
-            # 1. Drop rows with target NaN
             df = df.dropna(subset=[target_column])
             
-            # 2. Separate X and y
             X = df.drop(columns=[target_column])
             y = df[target_column]
             
-            # 3. Encode categorical features and target
-            # Strategy: Keep X_raw for analysis indices, X_encoded for training.
             X_raw = X.copy()
             
-            # Simple encoding: Label Encoding for all object columns
             le_dict = {}
             for col in X.select_dtypes(include=['object', 'category']).columns:
                 le = LabelEncoder()
-                # Handle NaNs in categorical columns by treating as "Missing" category
                 X[col] = X[col].fillna("Missing").astype(str)
                 X[col] = le.fit_transform(X[col])
                 le_dict[col] = le
             
-            # Handle NaNs in numeric columns (simple fill with median)
             for col in X.select_dtypes(include=['int64', 'float64']).columns:
                 X[col] = X[col].fillna(X[col].median())
                 
-            # Encode target
             le_target = LabelEncoder()
             y = le_target.fit_transform(y.astype(str))
             
-            # Identify positive class index (usually 1, or the second class)
             positive_label_idx = 1 if len(le_target.classes_) > 1 else 0
             positive_class_name = le_target.classes_[positive_label_idx]
             
-            # Split data with stratification to ensure both classes appear in train/test
-            # This is critical for imbalanced datasets where minority class is rare
-            # However, stratification can fail for very small datasets or when a class
-            # has too few samples, so we fall back to regular splitting in those cases
             try:
                 X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
                     X, y, df.index, test_size=test_size, random_state=42, stratify=y
                 )
             except ValueError as e:
-                # Stratification failed (likely due to a class having too few samples)
-                # Fall back to regular random split
                 print(f"Warning: Stratified split failed ({str(e)}), using regular split")
                 X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
                     X, y, df.index, test_size=test_size, random_state=42
                 )
             
             X_test_raw = df.loc[idx_test].drop(columns=[target_column])
-            
-            # Initialize Model
             model_params = model_params or {}
             
             if model_type == "Logistic Regression":
@@ -906,16 +849,12 @@ class FairnessTools(ToolManager):
                 model = GradientBoostingClassifier(random_state=42, **model_params)
             elif model_type == "SVM":
                 model = SVC(random_state=42, probability=True, **model_params)
-            else: # Default Random Forest
+            else: 
                 model = RandomForestClassifier(random_state=42, **model_params)
             
-            # Train
             model.fit(X_train, y_train)
-            
-            # Predict
             y_pred = model.predict(X_test)
             
-            # Global Metrics
             acc = accuracy_score(y_test, y_pred)
             f1_macro = f1_score(y_test, y_pred, average='macro', zero_division=0)
             f1_weighted = f1_score(y_test, y_pred, average='weighted', zero_division=0)
@@ -941,16 +880,13 @@ class FairnessTools(ToolManager):
                 "positive_class": str(positive_class_name)
             }
             
-            # Fairness Analysis
             if sensitive_columns:
                 fairness_results = {}
                 
                 for sens_col in sensitive_columns:
-                    # Check if column exists in raw data (it might have been dropped or renamed, though unlikely with X_raw)
                     if sens_col not in X_test_raw.columns:
                         continue
                         
-                    # Get groups from raw test data
                     groups = X_test_raw[sens_col].fillna("Missing").astype(str)
                     unique_groups = groups.unique()
                     
@@ -965,34 +901,27 @@ class FairnessTools(ToolManager):
                         y_test_g = y_test[mask]
                         y_pred_g = y_pred[mask]
                         
-                        # Performance per group
                         g_acc = accuracy_score(y_test_g, y_pred_g)
                         g_f1 = f1_score(y_test_g, y_pred_g, average='macro', zero_division=0)
                         
-                        # Selection Rate / Positive Rate: P(Predicted = 1 | Group)
                         pred_pos_count = (y_pred_g == positive_label_idx).sum()
                         total_count = len(y_pred_g)
                         pos_rate = pred_pos_count / total_count if total_count > 0 else 0
                         
-                        # Base Rate: P(Actual = 1 | Group)
                         actual_pos_count = (y_test_g == positive_label_idx).sum()
                         base_rate = actual_pos_count / total_count if total_count > 0 else 0
                         
-                        # Confusion Matrix Elements for this group (Binary vs Rest)
-                        # We use the positive_label_idx as the "Positive" class
                         y_test_g_binary = (y_test_g == positive_label_idx).astype(int)
                         y_pred_g_binary = (y_pred_g == positive_label_idx).astype(int)
                         
                         try:
-                            # For binary classification (0/1)
                             tn, fp, fn, tp = confusion_matrix(y_test_g_binary, y_pred_g_binary, labels=[0, 1]).ravel()
                             
-                            tpr = tp / (tp + fn) if (tp + fn) > 0 else 0  # Recall, Sensitivity
-                            tnr = tn / (tn + fp) if (tn + fp) > 0 else 0  # Specificity
-                            fpr = fp / (fp + tn) if (fp + tn) > 0 else 0  # False Positive Rate
-                            fnr = fn / (fn + tp) if (fn + tp) > 0 else 0  # False Negative Rate
+                            tpr = tp / (tp + fn) if (tp + fn) > 0 else 0  
+                            tnr = tn / (tn + fp) if (tn + fp) > 0 else 0  
+                            fpr = fp / (fp + tn) if (fp + tn) > 0 else 0 
+                            fnr = fn / (fn + tp) if (fn + tp) > 0 else 0  
                         except Exception:
-                            # Fallback if something goes wrong
                             tn = fp = fn = tp = 0
                             tpr = tnr = fpr = fnr = 0
 
@@ -1013,17 +942,12 @@ class FairnessTools(ToolManager):
                         }
                         positive_rates[str(group)] = pos_rate
                     
-                    # Calculate Fairness Metrics
                     rates_list = list(positive_rates.values())
                     if rates_list:
                         max_rate = max(rates_list)
                         min_rate = min(rates_list)
                         
-                        # Statistical Parity Difference (Max Difference)
                         spd = max_rate - min_rate
-                        
-                        # Disparate Impact (Min / Max ratio)
-                        # Use minimum non-zero rate to avoid DI = 0 when some groups have 0% selection
                         non_zero_rates = [r for r in rates_list if r > 0]
                         if non_zero_rates and max_rate > 0:
                             min_non_zero_rate = min(non_zero_rates)

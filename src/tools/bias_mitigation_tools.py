@@ -6,10 +6,8 @@ import os
 import warnings
 from imblearn.over_sampling import SMOTE, RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
-from sklearn.utils.class_weight import compute_sample_weight
 
 warnings.simplefilter(action='ignore', category=Warning)
-
 
 class BiasMitigationTools(ToolManager):
     def __init__(self):
@@ -17,7 +15,6 @@ class BiasMitigationTools(ToolManager):
         
         self.data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
         
-        # Tool: Apply Reweighting
         self.tool_apply_reweighting = Tool(
             name="apply_reweighting",
             function=self.apply_reweighting,
@@ -38,7 +35,6 @@ class BiasMitigationTools(ToolManager):
             }
         )
         
-        # Tool: Apply SMOTE
         self.tool_apply_smote = Tool(
             name="apply_smote",
             function=self.apply_smote,
@@ -64,7 +60,6 @@ class BiasMitigationTools(ToolManager):
             }
         )
         
-        # Tool: Apply Random Oversampling
         self.tool_apply_oversampling = Tool(
             name="apply_random_oversampling",
             function=self.apply_oversampling,
@@ -85,7 +80,6 @@ class BiasMitigationTools(ToolManager):
             }
         )
         
-        # Tool: Apply Random Undersampling
         self.tool_apply_undersampling = Tool(
             name="apply_random_undersampling",
             function=self.apply_undersampling,
@@ -106,7 +100,6 @@ class BiasMitigationTools(ToolManager):
             }
         )
         
-        # Tool: Compare Datasets
         self.tool_compare_datasets = Tool(
             name="compare_datasets",
             function=self.compare_datasets,
@@ -150,32 +143,20 @@ class BiasMitigationTools(ToolManager):
             if target_column not in df.columns:
                 return {"status": "error", "message": f"Target column '{target_column}' not found"}
             
-            # Validate sensitive columns
             missing_cols = [col for col in sensitive_columns if col not in df.columns]
             if missing_cols:
                 return {"status": "error", "message": f"Sensitive columns not found: {missing_cols}"}
             
-            # Create combined group identifier
             if len(sensitive_columns) == 1:
                 group_col = sensitive_columns[0]
             else:
                 group_col = "combined_group"
                 df[group_col] = df[sensitive_columns].astype(str).agg('_'.join, axis=1)
             
-            # Optimized Weight Calculation (Vectorized)
-            # Goal: Balance target classes AND ensure fairness (independence of group and target)
-            # Formula: W(g,y) = (Count(g) / Num_Classes) / Count(g,y)
-            # This ensures:
-            # 1. Total weight of class y = Total samples / Num_Classes (Balanced Classes)
-            # 2. Total weight of group g = Count(g) (Preserved Group Distribution)
-            
-            # Calculate counts
             g_counts = df[group_col].value_counts()
             gy_counts = df.groupby([group_col, target_column]).size()
             num_classes = df[target_column].nunique()
             
-            # Create a mapping for weights
-            # We map (group, target) -> weight
             weights_map = {}
             for group_val in g_counts.index:
                 for target_val in df[target_column].unique():
@@ -186,27 +167,22 @@ class BiasMitigationTools(ToolManager):
                     
                     if count_gy > 0:
                         count_g = g_counts[group_val]
-                        # W = (Ng / Nclasses) / Ngy
                         weight = (count_g / num_classes) / count_gy
                     else:
-                        weight = 1.0 # Fallback for empty intersections
+                        weight = 1.0 
                     
                     weights_map[(group_val, target_val)] = weight
             
-            # Apply weights
-            # Using list comprehension for speed optimization over apply(axis=1)
             df['sample_weight'] = [
                 weights_map.get((g, t), 1.0) 
                 for g, t in zip(df[group_col], df[target_column])
             ]
             
-            # Save the weighted dataset
             os.makedirs(output_dir, exist_ok=True)
             output_filename = f"{dataset_name.replace('.csv', '')}_reweighted.csv"
             output_path = os.path.join(output_dir, output_filename)
             df.to_csv(output_path, index=False)
             
-            # Compute statistics
             weights = df['sample_weight']
             weight_stats = {
                 "min": float(np.min(weights)),
@@ -216,17 +192,14 @@ class BiasMitigationTools(ToolManager):
                 "std": float(np.std(weights))
             }
             
-            # Distribution analysis
             distribution_before = df[target_column].value_counts().to_dict()
             
-            # Calculate WEIGHTED distribution (effective distribution after reweighting)
             weighted_dist = {}
             for target_val in df[target_column].unique():
                 mask = df[target_column] == target_val
                 weighted_count = df.loc[mask, 'sample_weight'].sum()
                 weighted_dist[target_val] = weighted_count
             
-            # Calculate weighted imbalance ratio
             weighted_counts = list(weighted_dist.values())
             if len(weighted_counts) > 0 and min(weighted_counts) > 0:
                 weighted_ratio = max(weighted_counts) / min(weighted_counts)
@@ -238,10 +211,10 @@ class BiasMitigationTools(ToolManager):
                 "method": "Reweighting (Balanced + Fair)",
                 "output_file": output_path,
                 "original_rows": len(df),
-                "new_rows": len(df),  # Same number of rows
+                "new_rows": len(df), 
                 "weight_statistics": weight_stats,
                 "distribution_before": distribution_before,
-                "distribution_after": weighted_dist,  # Weighted effective counts
+                "distribution_after": weighted_dist, 
                 "weighted_imbalance_ratio": round(weighted_ratio, 2),
                 "sensitive_columns_used": sensitive_columns,
                 "note": "Sample weights added as 'sample_weight' column. Weights calculated to balance target classes while preserving sensitive group distribution."
@@ -259,21 +232,17 @@ class BiasMitigationTools(ToolManager):
             if target_column not in df.columns:
                 return {"status": "error", "message": f"Target column '{target_column}' not found"}
             
-            # Separate features and target
             X = df.drop(columns=[target_column])
             y = df[target_column]
             
-            # Encode categorical variables
             categorical_cols = X.select_dtypes(include=['object']).columns.tolist()
             X_encoded = X.copy()
             
-            # Simple label encoding for categorical columns
             encodings = {}
             for col in categorical_cols:
                 X_encoded[col] = X[col].astype('category').cat.codes
                 encodings[col] = dict(enumerate(X[col].astype('category').cat.categories))
             
-            # Encode target if it's categorical
             if y.dtype == 'object':
                 y_encoded = y.astype('category').cat.codes
                 target_encoding = dict(enumerate(y.astype('category').cat.categories))
@@ -281,30 +250,22 @@ class BiasMitigationTools(ToolManager):
                 y_encoded = y
                 target_encoding = None
             
-            # Distribution before
             distribution_before = y.value_counts().to_dict()
             
-            # Apply SMOTE
             smote = SMOTE(k_neighbors=k_neighbors, sampling_strategy=sampling_strategy, random_state=42)
             X_resampled, y_resampled = smote.fit_resample(X_encoded, y_encoded)
             
-            # Decode target if it was encoded
             if target_encoding:
                 y_resampled = pd.Series(y_resampled).map(target_encoding)
             
-            # Create new dataframe
             df_resampled = pd.DataFrame(X_resampled, columns=X.columns)
-            
-            # Decode categorical columns back
             for col in categorical_cols:
                 df_resampled[col] = df_resampled[col].round().astype(int).map(encodings[col])
             
             df_resampled[target_column] = y_resampled
             
-            # Distribution after
             distribution_after = pd.Series(y_resampled).value_counts().to_dict()
             
-            # Save
             os.makedirs(output_dir, exist_ok=True)
             output_filename = f"{dataset_name.replace('.csv', '')}_smote.csv"
             output_path = os.path.join(output_dir, output_filename)
@@ -335,25 +296,19 @@ class BiasMitigationTools(ToolManager):
             if target_column not in df.columns:
                 return {"status": "error", "message": f"Target column '{target_column}' not found"}
             
-            # Separate features and target
             X = df.drop(columns=[target_column])
             y = df[target_column]
             
-            # Distribution before
             distribution_before = y.value_counts().to_dict()
             
-            # Apply Random Oversampling
             ros = RandomOverSampler(sampling_strategy=sampling_strategy, random_state=42)
             X_resampled, y_resampled = ros.fit_resample(X, y)
             
-            # Create new dataframe
             df_resampled = pd.DataFrame(X_resampled, columns=X.columns)
             df_resampled[target_column] = y_resampled
             
-            # Distribution after
             distribution_after = pd.Series(y_resampled).value_counts().to_dict()
             
-            # Save
             os.makedirs(output_dir, exist_ok=True)
             output_filename = f"{dataset_name.replace('.csv', '')}_oversampled.csv"
             output_path = os.path.join(output_dir, output_filename)
@@ -383,25 +338,19 @@ class BiasMitigationTools(ToolManager):
             if target_column not in df.columns:
                 return {"status": "error", "message": f"Target column '{target_column}' not found"}
             
-            # Separate features and target
             X = df.drop(columns=[target_column])
             y = df[target_column]
             
-            # Distribution before
             distribution_before = y.value_counts().to_dict()
             
-            # Apply Random Undersampling
             rus = RandomUnderSampler(sampling_strategy=sampling_strategy, random_state=42)
             X_resampled, y_resampled = rus.fit_resample(X, y)
             
-            # Create new dataframe
             df_resampled = pd.DataFrame(X_resampled, columns=X.columns)
             df_resampled[target_column] = y_resampled
             
-            # Distribution after
             distribution_after = pd.Series(y_resampled).value_counts().to_dict()
             
-            # Save
             os.makedirs(output_dir, exist_ok=True)
             output_filename = f"{dataset_name.replace('.csv', '')}_undersampled.csv"
             output_path = os.path.join(output_dir, output_filename)
@@ -425,14 +374,12 @@ class BiasMitigationTools(ToolManager):
     def compare_datasets(self, original_dataset: str, mitigated_dataset: str,
                         target_column: str, sensitive_columns: list) -> dict:
         try:
-            # Load datasets
             orig_path = self._resolve_path(original_dataset)
             mit_path = mitigated_dataset if os.path.exists(mitigated_dataset) else self._resolve_path(mitigated_dataset)
             
             df_orig = pd.read_csv(orig_path)
             df_mit = pd.read_csv(mit_path)
             
-            # Check if mitigated dataset has sample weights (reweighting method)
             has_weights = 'sample_weight' in df_mit.columns
             
             comparison = {
@@ -447,10 +394,8 @@ class BiasMitigationTools(ToolManager):
                 "uses_weights": has_weights
             }
             
-            # Compare target distribution
             orig_dist = df_orig[target_column].value_counts()
             
-            # For weighted datasets, calculate weighted distribution
             if has_weights:
                 mit_dist_counts = {}
                 for target_val in df_mit[target_column].unique():
@@ -475,7 +420,6 @@ class BiasMitigationTools(ToolManager):
                         "percentage_point_change": round(mit_weighted_pct - orig_pct, 2)
                     }
                 
-                # Calculate weighted imbalance ratio
                 weighted_values = list(mit_dist_counts.values())
                 if len(weighted_values) > 0 and min(weighted_values) > 0:
                     mit_ratio = max(weighted_values) / min(weighted_values)
@@ -483,7 +427,6 @@ class BiasMitigationTools(ToolManager):
                     mit_ratio = 0
                     
             else:
-                # Regular (unweighted) comparison
                 mit_dist = df_mit[target_column].value_counts()
                 
                 for value in orig_dist.index:
@@ -501,14 +444,12 @@ class BiasMitigationTools(ToolManager):
                         "percentage_point_change": round(mit_pct - orig_pct, 2)
                     }
                 
-                # Calculate unweighted imbalance ratio
                 mit_values = df_mit[target_column].value_counts().values
                 if len(mit_values) > 0 and min(mit_values) > 0:
                     mit_ratio = max(mit_values) / min(mit_values)
                 else:
                     mit_ratio = 0
             
-            # Compare sensitive attributes
             comparison["sensitive_attributes"] = {}
             for col in sensitive_columns:
                 if col in df_orig.columns and col in df_mit.columns:
@@ -534,7 +475,6 @@ class BiasMitigationTools(ToolManager):
                     
                     comparison["sensitive_attributes"][col] = col_comparison
             
-            # Calculate imbalance metrics
             orig_values = df_orig[target_column].value_counts().values
             orig_ratio = max(orig_values) / min(orig_values) if len(orig_values) > 0 and min(orig_values) > 0 else 0
             
