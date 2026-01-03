@@ -101,18 +101,15 @@ class DatasetEvaluationPipeline:
     def _extract_target_column(self, user_prompt: str) -> str:
         prompt_lower = user_prompt.lower()
         
-        # Look for "target=" or "target:" patterns
         if "target=" in prompt_lower or "target:" in prompt_lower:
             match = re.search(r'target[=:]\s*([a-zA-Z_-]+)', user_prompt, re.IGNORECASE)
             if match:
                 return match.group(1)
         
-        # Look for "target is/as" patterns
         match = re.search(r'target\s+(?:is|as)\s+([a-zA-Z_-]+)', user_prompt, re.IGNORECASE)
         if match:
             return match.group(1)
         
-        # Look for common target keywords
         common_targets = ["income", "salary", "class", "label", "outcome", "result", "prediction"]
         for target in common_targets:
             if target in prompt_lower:
@@ -134,7 +131,6 @@ class DatasetEvaluationPipeline:
         self.target_column = target_column
         self.user_objective = user_prompt
         
-        # Create report directory with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.report_dir = os.path.join("reports", f"{dataset_name}_{timestamp}")
         self.images_dir = os.path.join(self.report_dir, "images")
@@ -179,7 +175,6 @@ class DatasetEvaluationPipeline:
         self.evaluation_results["stages"]["3_sensitive"] = sensitive
         
         
-        # Override detected sensitive columns if confirmed list provided
         if confirmed_sensitive:
              print(f"\nUsing confirmed sensitive columns: {confirmed_sensitive}")
              self.evaluation_results["stages"]["3_sensitive"]["sensitive_columns"] = confirmed_sensitive
@@ -188,7 +183,6 @@ class DatasetEvaluationPipeline:
         imbalance = self._stage_4_imbalance_analysis(dataset_name, proxy_config)
         self.evaluation_results["stages"]["4_imbalance"] = imbalance
         
-        # Optional Stage 4.5: Target Fairness Analysis (only if target is specified)
         if target_column:
             print("\nSTAGE 4.5: Target Fairness Analysis")
             target_fairness = self._stage_4_5_target_fairness_analysis(dataset_name, target_column, proxy_config=proxy_config)
@@ -342,7 +336,6 @@ class DatasetEvaluationPipeline:
         
         identified_columns = list(dict.fromkeys(identified_columns))
         
-        # Explicitly exclude target column from sensitive columns
         if target_column and target_column in identified_columns:
             print(f"Removing target column '{target_column}' from sensitive attributes list")
             identified_columns.remove(target_column)
@@ -374,7 +367,6 @@ class DatasetEvaluationPipeline:
             tool_result["imbalanced_columns"] = len(filtered_details)
             print(f"Filtered to {len(filtered_details)} sensitive columns with imbalance")
             
-        # Proxy Model Analysis if enabled
         proxy_results = None
         if proxy_config and proxy_config.get("enabled", False) and sensitive_cols and hasattr(self, 'target_column') and self.target_column:
             print("\nRunning Proxy Model Analysis (Single Columns)...")
@@ -390,10 +382,8 @@ class DatasetEvaluationPipeline:
             print(f"Proxy Analysis Complete: {proxy_results.get('status')}")
         
         print("\nAgent analyzing imbalance in SENSITIVE columns only...")
-        # Add proxy results to prompt if available
         proxy_context = ""
         if proxy_results and proxy_results.get("status") == "success":
-            # Format per-label metrics if available
             per_label_str = ""
             if 'per_label_metrics' in proxy_results.get('performance', {}):
                 per_label_str = "\nPer-Label Performance (F1, Precision, Recall):\n" + self._safe_json_dumps(proxy_results['performance']['per_label_metrics'])
@@ -440,7 +430,7 @@ class DatasetEvaluationPipeline:
             "tool_used": "check_class_imbalance",
             "tool_result": tool_result,
             "proxy_model_results": proxy_results,
-            "baseline_fairness_metrics": proxy_results,  # Store for comparison in Stage 6
+            "baseline_fairness_metrics": proxy_results, 
             "agent_analysis": analysis,
             "analyzed_columns": sensitive_cols
         }
@@ -449,7 +439,6 @@ class DatasetEvaluationPipeline:
                                           proxy_config: dict = None) -> Dict[str, Any]:
         sensitive_cols = self.evaluation_results["stages"]["3_sensitive"].get("sensitive_columns", [])
         
-        # Ensure target column is not in sensitive columns (double-check)
         if target_column in sensitive_cols:
             print(f"WARNING: Target column '{target_column}' found in sensitive columns, removing it")
             sensitive_cols = [col for col in sensitive_cols if col != target_column]
@@ -464,7 +453,6 @@ class DatasetEvaluationPipeline:
         print(f"Analyzing target '{target_column}' fairness across {len(sensitive_cols)} sensitive columns")
         print(f"Sensitive columns: {sensitive_cols}")
         
-        # If selected_pairs is provided, only analyze those combinations
         if selected_pairs:
             print(f"User selected {len(selected_pairs)} combinations to analyze: {selected_pairs}")
         
@@ -474,7 +462,7 @@ class DatasetEvaluationPipeline:
             target_column=target_column,
             sensitive_columns=sensitive_cols,
             output_dir=self.images_dir,
-            selected_pairs=selected_pairs  # Pass selected pairs to tool
+            selected_pairs=selected_pairs  
         )
         
         if tool_result.get("status") == "success":
@@ -491,7 +479,6 @@ class DatasetEvaluationPipeline:
                 
                 temp_cols = []
                 for pair in selected_pairs:
-                    # pair is list of 2 columns
                     col1, col2 = pair[0], pair[1]
                     if col1 in df.columns and col2 in df.columns:
                         combined_name = f"{col1}_{col2}_combined"
@@ -513,7 +500,6 @@ class DatasetEvaluationPipeline:
                         model_params=proxy_config.get("model_params", {})
                     )
                     
-                    # Cleanup
                     if os.path.exists(temp_path):
                         os.remove(temp_path)
             except Exception as e:
@@ -633,7 +619,6 @@ class DatasetEvaluationPipeline:
             report.append("-" * 80)
             
             if isinstance(stage_data, dict):
-                # Special handling for 6_bias_mitigation stage
                 if stage_name == "6_bias_mitigation" and "methods" in stage_data:
                     methods_results = stage_data["methods"]
                     applied_methods = stage_data.get("applied_methods", list(methods_results.keys()))
@@ -642,7 +627,6 @@ class DatasetEvaluationPipeline:
                     report.append(f"Applied Methods: {', '.join(applied_methods)}")
                     report.append("")
                     
-                    # Detailed results for each method
                     for method in applied_methods:
                         method_result = methods_results.get(method, {})
                         
@@ -653,13 +637,11 @@ class DatasetEvaluationPipeline:
                             report.append(f"Error: {method_result.get('error', 'Unknown error')}")
                             continue
                         
-                        # Mitigation results
                         mitigation_result = method_result.get("mitigation_result", {})
                         if mitigation_result:
                             report.append("\n[MITIGATION RESULTS]")
                             report.append(self._safe_json_dumps(mitigation_result))
                         
-                        # Comparison results - Check top level first, then inside mitigation_result
                         comparison_result = method_result.get("comparison_result")
                         if not comparison_result and mitigation_result:
                             comparison_result = mitigation_result.get("comparison_result")
@@ -669,7 +651,6 @@ class DatasetEvaluationPipeline:
                             comparison_without_analysis = {k: v for k, v in comparison_result.items() if k != "agent_analysis"}
                             report.append(self._safe_json_dumps(comparison_without_analysis))
                         
-                        # Fairness comparison results - Check top level first, then inside mitigation_result
                         fairness_comparison = method_result.get("fairness_comparison")
                         if not fairness_comparison and mitigation_result:
                             fairness_comparison = mitigation_result.get("fairness_comparison")
@@ -678,7 +659,6 @@ class DatasetEvaluationPipeline:
                             report.append("\n\n[FAIRNESS COMPARISON]")
                             report.append(self._safe_json_dumps(fairness_comparison))
                             
-                            # Also save as separate JSON file for easier loading in GUI
                             try:
                                 fairness_json_filename = f"fairness_comparison_{method.lower().replace(' ', '_')}.json"
                                 fairness_json_path = os.path.join(self.report_dir, fairness_json_filename)
@@ -688,7 +668,6 @@ class DatasetEvaluationPipeline:
                             except Exception as e:
                                 print(f"Warning: Could not save fairness comparison JSON: {e}")
                         
-                        # Agent analysis for this method
                         agent_analysis = comparison_result.get("agent_analysis")
                         if agent_analysis:
                             report.append("\n[AGENT ANALYSIS]")
@@ -696,7 +675,6 @@ class DatasetEvaluationPipeline:
                         
                         report.append("")
                 
-                # Regular stage handling
                 elif "tool_used" in stage_data:
                     report.append(f"\n[TOOL USED]: {stage_data['tool_used']}")
                     report.append("")
@@ -705,12 +683,10 @@ class DatasetEvaluationPipeline:
                         report.append("\n[TOOL RESULT]")
                         report.append(self._safe_json_dumps(stage_data["tool_result"]))
                     
-                    # Include proxy model results for Stage 4
                     if "proxy_model_results" in stage_data:
                         report.append("\n\n[PROXY MODEL RESULTS]")
                         report.append(self._safe_json_dumps(stage_data["proxy_model_results"]))
                     
-                    # Include intersectional proxy results for Stage 4.5
                     if "intersectional_proxy_results" in stage_data:
                         report.append("\n\n[INTERSECTIONAL PROXY RESULTS]")
                         report.append(self._safe_json_dumps(stage_data["intersectional_proxy_results"]))
@@ -871,13 +847,11 @@ class DatasetEvaluationPipeline:
             else:
                 return {"status": "error", "message": f"Unknown method: {method}"}
             
-            # Run fairness comparison if baseline metrics are available and mitigation succeeded
             if result.get("status") == "success" and result.get("output_file"):
                 print(f"\n{'='*60}")
                 print(f"FAIRNESS COMPARISON DEBUG for {method}")
                 print(f"{'='*60}")
                 
-                # Get baseline metrics from Stage 4
                 baseline_metrics = self.evaluation_results.get("stages", {}).get("4_imbalance", {}).get("baseline_fairness_metrics")
                 
                 print(f"Baseline metrics found: {baseline_metrics is not None}")
@@ -885,23 +859,20 @@ class DatasetEvaluationPipeline:
                     print(f"Baseline status: {baseline_metrics.get('status')}")
                 
                 if baseline_metrics and baseline_metrics.get("status") == "success":
-                    # Extract filename (full path)
                     output_file = result.get("output_file", "")
                     if output_file.endswith(".csv"):
-                        csv_filename = output_file  # Use full path!
+                        csv_filename = output_file  
                     else:
                         csv_filename = output_file
                     
                     print(f"Mitigated CSV filename: {csv_filename}")
                     
-                    # Get proxy config from kwargs or use defaults
                     proxy_config = kwargs.get("proxy_config", {
                         "test_size": 0.25,
                         "model_type": "Random Forest",
                         "model_params": {}
                     })
                     
-                    # Get sensitive columns from Stage 4
                     analyzed_columns = self.evaluation_results.get("stages", {}).get("4_imbalance", {}).get("analyzed_columns", [])
                     
                     print(f"Analyzed columns: {analyzed_columns}")
@@ -910,7 +881,6 @@ class DatasetEvaluationPipeline:
                     if analyzed_columns and target_column:
                         print(f"\n✓ Running fairness comparison for {method}...")
                         
-                        # Run proxy model on mitigated dataset
                         mitigated_metrics = self._run_proxy_on_mitigated_dataset(
                             csv_filename=csv_filename,
                             target_column=target_column,
@@ -921,7 +891,6 @@ class DatasetEvaluationPipeline:
                         print(f"Mitigated metrics status: {mitigated_metrics.get('status')}")
                         
                         if mitigated_metrics.get("status") == "success":
-                            # Compare metrics
                             comparison = self._compare_fairness_metrics(
                                 baseline=baseline_metrics,
                                 mitigated=mitigated_metrics,
@@ -929,16 +898,16 @@ class DatasetEvaluationPipeline:
                             )
                             
                             result["fairness_comparison"] = comparison
-                            print(f"✓ Fairness comparison complete: {comparison.get('overall_improvement', 'Unknown')} improvement")
+                            print(f"Fairness comparison complete: {comparison.get('overall_improvement', 'Unknown')} improvement")
                             print(f"{'='*60}\n")
                         else:
-                            print(f"✗ Could not run proxy model on mitigated dataset: {mitigated_metrics.get('message', 'Unknown error')}")
+                            print(f"Could not run proxy model on mitigated dataset: {mitigated_metrics.get('message', 'Unknown error')}")
                             print(f"{'='*60}\n")
                     else:
-                        print(f"✗ Skipping fairness comparison: missing sensitive columns or target column")
+                        print(f"Skipping fairness comparison: missing sensitive columns or target column")
                         print(f"{'='*60}\n")
                 else:
-                    print(f"✗ Skipping fairness comparison: no baseline metrics available from Stage 4")
+                    print(f"Skipping fairness comparison: no baseline metrics available from Stage 4")
                     print(f"{'='*60}\n")
             
             return result
@@ -957,7 +926,6 @@ class DatasetEvaluationPipeline:
                 sensitive_columns=sensitive_columns
             )
             
-            # Generate agent analysis of the comparison
             analysis_prompt = f"""Analyze the comparison between original and mitigated datasets:
             
             {self._safe_json_dumps(result)}
@@ -1021,7 +989,6 @@ class DatasetEvaluationPipeline:
                 "per_attribute_comparison": {}
             }
             
-            # Compare fairness metrics for each sensitive attribute
             baseline_fairness = baseline.get("fairness_analysis", {})
             mitigated_fairness = mitigated.get("fairness_analysis", {})
             
@@ -1032,31 +999,29 @@ class DatasetEvaluationPipeline:
                 baseline_metrics = baseline_fairness[attr].get("metrics", {})
                 mitigated_metrics = mitigated_fairness[attr].get("metrics", {})
                 
-                # Calculate improvements
                 spd_baseline = baseline_metrics.get("statistical_parity_difference", 0)
                 spd_mitigated = mitigated_metrics.get("statistical_parity_difference", 0)
-                spd_improvement = spd_baseline - spd_mitigated  # Positive = improvement (closer to 0)
+                spd_improvement = spd_baseline - spd_mitigated 
                 
                 di_baseline = baseline_metrics.get("disparate_impact", 0)
                 di_mitigated = mitigated_metrics.get("disparate_impact", 0)
-                di_improvement = di_mitigated - di_baseline  # Positive = improvement (closer to 1)
+                di_improvement = di_mitigated - di_baseline  
                 
                 comparison["per_attribute_comparison"][attr] = {
                     "statistical_parity_difference": {
-                        "baseline": float(spd_baseline),  # Ensure float
+                        "baseline": float(spd_baseline), 
                         "mitigated": float(spd_mitigated),
                         "change": float(spd_improvement),
-                        "improved": bool(abs(spd_mitigated) < abs(spd_baseline))  # Cast to standard bool
+                        "improved": bool(abs(spd_mitigated) < abs(spd_baseline)) 
                     },
                     "disparate_impact": {
                         "baseline": float(di_baseline),
                         "mitigated": float(di_mitigated),
                         "change": float(di_improvement),
-                        "improved": bool(abs(1.0 - di_mitigated) < abs(1.0 - di_baseline))  # Cast to standard bool
+                        "improved": bool(abs(1.0 - di_mitigated) < abs(1.0 - di_baseline)) 
                     }
                 }
             
-            # Overall improvement assessment
             improvements_count = sum(
                 1 for attr_comp in comparison["per_attribute_comparison"].values()
                 if attr_comp["statistical_parity_difference"]["improved"] or 
