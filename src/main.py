@@ -9,9 +9,6 @@ import os
 RUN_MODE = "gui"  # Options: "terminal" or "gui"
 # ============================================
 
-# Client selection: "openrouter", "gemini", "local", or None to use config.yml
-CLIENT_PROVIDER = None  # Set to None to use config.yml settings
-
 
 def get_config_path():
     """Get path to the configuration file."""
@@ -35,20 +32,8 @@ def run_terminal_mode():
     print(f"User prompt: {user_prompt}")
     
     try:
-        if CLIENT_PROVIDER:
-            # Legacy mode with explicit provider
-            provider_map = {"openrouter": 1, "gemini": 2, "local": 0}
-            use_api = provider_map.get(CLIENT_PROVIDER.lower(), 1)
-            pipeline = DatasetEvaluationPipeline(use_api_model=use_api)
-        else:
-            # Use configuration file
-            config_path = get_config_path()
-            if os.path.exists(config_path):
-                pipeline = DatasetEvaluationPipeline(config_path=config_path)
-            else:
-                print(f"Config file not found: {config_path}")
-                print("Falling back to OpenRouter...")
-                pipeline = DatasetEvaluationPipeline(use_api_model=1)
+        config_path = get_config_path()
+        pipeline = DatasetEvaluationPipeline(config_path=config_path)
         
         results = pipeline.evaluate_dataset(user_prompt)
         pipeline.generate_report()

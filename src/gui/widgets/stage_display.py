@@ -20,46 +20,6 @@ from gui.widgets.fairness import render_fairness_comparison_board
 
 
 # ---------------------------------------------------------------------------
-# Stage execution helpers
-# ---------------------------------------------------------------------------
-
-def execute_stage(pipeline, stage_key, user_prompt, dataset_name, target_column,
-                  confirmed_sensitive=None, proxy_config=None):
-    """Dispatch a single pipeline stage and return its result dict."""
-    if stage_key == "0_loading":
-        return pipeline._stage_0_load_dataset(dataset_name)
-    elif stage_key == "1_objective":
-        return pipeline._stage_1_objective_inspection(user_prompt)
-    elif stage_key == "2_quality":
-        return pipeline._stage_2_data_quality(dataset_name)
-    elif stage_key == "3_sensitive":
-        return pipeline._stage_3_sensitive_detection(dataset_name, target_column)
-    elif stage_key == "4_imbalance":
-        if confirmed_sensitive:
-            pipeline.evaluation_results["stages"]["3_sensitive"]["sensitive_columns"] = confirmed_sensitive
-        return pipeline._stage_4_imbalance_analysis(dataset_name, proxy_config)
-    elif stage_key == "4_5_target_fairness":
-        return pipeline._stage_4_5_target_fairness_analysis(
-            dataset_name, target_column, proxy_config=proxy_config
-        )
-    elif stage_key == "5_recommendations":
-        return pipeline._stage_6_recommendations()
-    else:
-        return {"status": "error", "message": f"Unknown stage: {stage_key}"}
-
-
-def execute_stage_with_pairs(pipeline, stage_key, user_prompt, dataset_name,
-                             target_column, selected_pairs, proxy_config=None):
-    """Execute a stage that requires attribute-pair selection (e.g. 4.5)."""
-    if stage_key == "4_5_target_fairness":
-        return pipeline._stage_4_5_target_fairness_analysis(
-            dataset_name, target_column, selected_pairs, proxy_config=proxy_config
-        )
-    return execute_stage(pipeline, stage_key, user_prompt, dataset_name,
-                         target_column, proxy_config=proxy_config)
-
-
-# ---------------------------------------------------------------------------
 # Stage result renderer
 # ---------------------------------------------------------------------------
 

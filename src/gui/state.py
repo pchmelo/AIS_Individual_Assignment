@@ -29,9 +29,6 @@ def init_session_state():
         "confirmed_sensitive_columns": None,
         "proxy_config": {"enabled": False},
 
-        # Legacy step-wise tracking (kept for view_results compatibility)
-        "current_step": 0,
-        "step_approved": {},
         "evaluation_results": None,
         "selected_report": None,
 

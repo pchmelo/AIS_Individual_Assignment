@@ -1,12 +1,4 @@
-"""
-Stage – Represents a single step in the evaluation pipeline.
-
-Each stage wraps an agent, an execution function, and accumulated context.
-Stages can be executed, repeated, or rolled back as part of an interactive pipeline.
-"""
-
 from __future__ import annotations
-
 import copy
 from dataclasses import dataclass, field
 from enum import Enum
@@ -19,6 +11,12 @@ class StageStatus(str, Enum):
     COMPLETED = "completed"
     ERROR = "error"
     SKIPPED = "skipped"
+
+
+class NavigationAction(str, Enum):
+    FORWARD = "forward"
+    BACKWARD = "backward"
+    REPEAT = "repeat"
 
 
 @dataclass
@@ -58,9 +56,6 @@ class Stage:
     optional: bool = False
     requires_confirmation: bool = False
 
-    # ------------------------------------------------------------------
-    # Execution helpers
-    # ------------------------------------------------------------------
 
     def execute(self, pipeline_ctx: Dict[str, Any]) -> Dict[str, Any]:
         """Run the stage and store the result.
@@ -83,7 +78,6 @@ class Stage:
             result = self.execute_fn(self, pipeline_ctx)
             self.result = result
             self.status = StageStatus.COMPLETED
-            # Archive execution in history
             self.history.append({
                 "user_context": self.user_context,
                 "result": copy.deepcopy(result),
@@ -104,9 +98,6 @@ class Stage:
         self.result = None
         self.user_context = None
 
-    # ------------------------------------------------------------------
-    # Convenience
-    # ------------------------------------------------------------------
 
     @property
     def is_completed(self) -> bool:
@@ -118,13 +109,3 @@ class Stage:
 
     def __repr__(self) -> str:
         return f"Stage(key={self.key!r}, name={self.name!r}, status={self.status.value})"
-
-
-# ======================================================================
-# Navigation action enum (used by the GUI to communicate intent)
-# ======================================================================
-
-class NavigationAction(str, Enum):
-    FORWARD = "forward"
-    BACKWARD = "backward"
-    REPEAT = "repeat"

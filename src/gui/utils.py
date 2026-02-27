@@ -6,7 +6,6 @@ Dataset I/O, report listing, column inspection, and report file parsing utilitie
 
 import os
 import re
-import json
 
 import streamlit as st
 import pandas as pd
@@ -113,27 +112,3 @@ def parse_report_file(filepath: str):
         stages[current_stage] = "\n".join(current_content).strip()
 
     return header_info, stages
-
-
-def extract_json_block(text: str, start_marker: str):
-    """Extract a JSON text block that follows *start_marker* in *text*.
-    
-    Returns the raw string (not parsed) or None.
-    """
-    try:
-        start_idx = text.find(start_marker)
-        if start_idx == -1:
-            return None
-
-        json_start = start_idx + len(start_marker)
-        remaining = text[json_start:].strip()
-
-        next_section = re.search(r"\n\n\[", remaining)
-        if next_section:
-            json_text = remaining[: next_section.start()].strip()
-        else:
-            json_text = remaining.strip()
-
-        return json_text
-    except Exception:
-        return None

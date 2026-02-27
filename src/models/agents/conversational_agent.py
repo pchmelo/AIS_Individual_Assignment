@@ -1,5 +1,3 @@
-"""Conversational Agent - General purpose conversational AI."""
-
 from models.agents.base_agent import BaseAgent
 from models.clients.base_client import BaseModelClient
 

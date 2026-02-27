@@ -45,8 +45,6 @@ class ToolManager:
             return tool_name, args
             
         except (json.JSONDecodeError, ValueError) as e:
-            print(f"DEBUG - Parsing error: {e}")
-            print(f"DEBUG - Raw JSON string: {json_str}")
             raise ValueError(f"Error parsing function call: {e}")
     
     def execute_tool(self, tool_name: str, args: dict):
@@ -58,16 +56,6 @@ class ToolManager:
         print(f"TOOL RESULT: {json.dumps(result, indent=2)}\n")
         
         return result
-    
-    def has_tool(self, tool_name: str) -> bool:
-        return tool_name in self.tools
-    
-    def list_tool_names(self) -> list:
-        return list(self.tools.keys())
-    
-    def add_tool(self, tool):
-        self.list_of_tools.append(tool)
-        self._build_tool_mappings()
     
     def add_tools(self, tools: list):
         self.list_of_tools.extend(tools)

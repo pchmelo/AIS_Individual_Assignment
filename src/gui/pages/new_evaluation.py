@@ -14,7 +14,7 @@ from itertools import combinations
 import streamlit as st
 
 from pipeline import DatasetEvaluationPipeline
-from stage import NavigationAction, StageStatus
+from pipeline.stage import NavigationAction, StageStatus
 
 from gui.config import (
     get_config_path,
@@ -542,7 +542,6 @@ def _get_confirmation_hint(stage, pipeline):
 def _reset_state():
     """Reset all pipeline-related session state."""
     st.session_state.mode = None
-    st.session_state.current_step = 0
     st.session_state.pipeline = None
     st.session_state.pipeline_started = False
     st.session_state.evaluation_results = None

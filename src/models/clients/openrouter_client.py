@@ -1,39 +1,22 @@
-"""
-OpenRouter API Client
-
-Provides access to various models through the OpenRouter API.
-Supports models from OpenAI, Anthropic, Google, Meta, and others.
-"""
-
 import os
 import time
 import requests
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from dotenv import load_dotenv
-
 from models.clients.base_client import BaseModelClient, ModelInfo
 
 load_dotenv()
 
-
 class OpenRouterClient(BaseModelClient):
     """
     Client for OpenRouter API.
-    
     OpenRouter provides unified access to multiple AI models through a single API.
     
     Environment Variables:
         OPENROUTER_API_KEY: Your OpenRouter API key (required)
-    
-    Example:
-        client = OpenRouterClient(model="x-ai/grok-4.1-fast:free")
-        response = client.generate([
-            {"role": "user", "content": "Hello!"}
-        ])
     """
     
     DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
-    DEFAULT_MODEL = "x-ai/grok-4.1-fast:free"
     
     def __init__(
         self, 
@@ -43,23 +26,12 @@ class OpenRouterClient(BaseModelClient):
         model_info: Dict[str, Any] = None,
         **kwargs
     ):
-        """
-        Initialize OpenRouter client.
-        
-        Args:
-            model: Model identifier (e.g., "x-ai/grok-4.1-fast:free")
-            base_url: API base URL (defaults to OpenRouter API)
-            api_key: API key (defaults to OPENROUTER_API_KEY env var)
-            model_info: Optional dict with model capabilities
-            **kwargs: Additional configuration options
-        """
         super().__init__()
         
-        self.model = model or self.DEFAULT_MODEL
+        self.model = model
         self.base_url = base_url or self.DEFAULT_BASE_URL
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         
-        # Model capabilities info
         self._model_info = model_info or {}
         
         # HTTP headers for requests
@@ -86,21 +58,6 @@ class OpenRouterClient(BaseModelClient):
         max_tokens: int = 4096,
         **kwargs
     ) -> str:
-        """
-        Generate a response using the OpenRouter API.
-        
-        Args:
-            messages: List of message dicts with 'role' and 'content'.
-            temperature: Sampling temperature (0.0 to 1.0).
-            max_tokens: Maximum tokens to generate.
-            **kwargs: Additional parameters (top_p, stop, etc.)
-        
-        Returns:
-            Generated text response.
-        
-        Raises:
-            Exception: If API call fails.
-        """
         self.validate_messages(messages)
         
         payload = {
@@ -144,11 +101,9 @@ class OpenRouterClient(BaseModelClient):
 
             raise Exception(f"OpenRouter API Error: {response.status_code} - {response.text}")
         
-        # Should never reach here, but just in case
         raise Exception(f"OpenRouter API Error after {max_retries + 1} attempts: {response.status_code} - {response.text}")
     
     def get_model_info(self) -> ModelInfo:
-        """Get model capabilities info."""
         return ModelInfo(
             name=self.model,
             provider="openrouter",

@@ -1,14 +1,6 @@
-"""
-Local Model Client
-
-Provides access to locally-hosted models using HuggingFace Transformers.
-Requires PyTorch and transformers packages.
-"""
-
-from typing import List, Dict, Any
+from typing import List, Dict
 from models.clients.base_client import BaseModelClient, ModelInfo
 
-# Lazy imports for PyTorch and transformers
 try:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -23,24 +15,8 @@ except ImportError:
 class LocalModelClient(BaseModelClient):
     """
     Client for locally-hosted models using HuggingFace Transformers.
-    
-    Requires PyTorch and transformers packages:
-        pip install torch transformers
-    
-    Example:
-        client = LocalModelClient(model="ibm-granite/granite-3b-code-instruct")
-        response = client.generate([
-            {"role": "user", "content": "Hello!"}
-        ])
-    
-    Note:
-        - Requires a CUDA-capable GPU for reasonable performance
-        - Models are downloaded on first use
-        - Memory usage depends on model size
     """
-    
-    DEFAULT_MODEL = "ibm-granite/granite-3b-code-instruct"
-    
+        
     def __init__(
         self, 
         model: str = None,
@@ -48,15 +24,6 @@ class LocalModelClient(BaseModelClient):
         dtype: str = "float16",
         **kwargs
     ):
-        """
-        Initialize local model client.
-        
-        Args:
-            model: HuggingFace model identifier
-            device: Device to load model on ("auto", "cuda", "cpu")
-            dtype: Model dtype ("float16", "float32", "bfloat16")
-            **kwargs: Additional configuration options
-        """
         super().__init__()
         
         if not TORCH_AVAILABLE:
@@ -66,10 +33,9 @@ class LocalModelClient(BaseModelClient):
                 "Alternatively, use API-based models (Gemini or OpenRouter) which don't require PyTorch."
             )
         
-        self.model_name = model or self.DEFAULT_MODEL
+        self.model_name = model
         self.device = device
         
-        # Map dtype string to torch dtype
         dtype_map = {
             "float16": torch.float16,
             "float32": torch.float32,
@@ -96,24 +62,9 @@ class LocalModelClient(BaseModelClient):
         max_tokens: int = 4096,
         **kwargs
     ) -> str:
-        """
-        Generate a response using the local model.
-        
-        Args:
-            messages: List of message dicts with 'role' and 'content'.
-            temperature: Sampling temperature (0.0 to 1.0).
-            max_tokens: Maximum tokens to generate.
-            **kwargs: Additional generation parameters
-        
-        Returns:
-            Generated text response.
-        """
         self.validate_messages(messages)
         
-        # Build prompt from messages
         prompt = self._build_prompt_from_messages(messages)
-        
-        # Tokenize
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         
         # Generate
@@ -121,7 +72,7 @@ class LocalModelClient(BaseModelClient):
             output = self.model.generate(
                 **inputs,
                 max_new_tokens=max_tokens,
-                temperature=max(temperature, 0.01),  # Avoid division by zero
+                temperature=max(temperature, 0.01),  
                 do_sample=temperature > 0,
                 pad_token_id=self.tokenizer.eos_token_id,
                 use_cache=True,
@@ -130,17 +81,12 @@ class LocalModelClient(BaseModelClient):
                 repetition_penalty=kwargs.get("repetition_penalty", 1.1)
             )
         
-        # Decode and extract response
-        text = self.tokenizer.decode(output[0], skip_special_tokens=True)
-        
-        # Remove the prompt from response
+        text = self.tokenizer.decode(output[0], skip_special_tokens=True)  
         response = text[len(prompt):].strip()
         
         return response
     
     def get_model_info(self) -> ModelInfo:
-        """Get model capabilities info."""
-        # Infer capabilities from model name
         name_lower = self.model_name.lower()
         
         supports_function = any(
@@ -159,13 +105,3 @@ class LocalModelClient(BaseModelClient):
             max_tokens=4096,
             context_window=8192
         )
-    
-    def unload(self):
-        """Unload the model from memory."""
-        if hasattr(self, 'model'):
-            del self.model
-        if hasattr(self, 'tokenizer'):
-            del self.tokenizer
-        if TORCH_AVAILABLE and torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        print(f"Model {self.model_name} unloaded from memory")

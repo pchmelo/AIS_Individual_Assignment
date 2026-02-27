@@ -1,5 +1,3 @@
-"""Data Analyst Agent - Analyzes data and provides insights."""
-
 import json
 from models.agents.base_agent import BaseAgent
 from models.clients.base_client import BaseModelClient

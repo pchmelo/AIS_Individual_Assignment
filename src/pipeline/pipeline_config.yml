@@ -1,0 +1,75 @@
+# =============================================================================
+# Evaluation Pipeline – Stage Definitions
+# =============================================================================
+#
+# Each entry under `stages` declares one step of the evaluation pipeline.
+#
+# Keys per stage:
+#   key                  – Unique identifier used internally  (required)
+#   name                 – Human-readable label               (required)
+#   executor             – Class name from pipeline.stages    (required)
+#   agent                – Pipeline agent attribute name      (required)
+#   description          – Short description for the UI
+#   requires_confirmation – Pause before running so the user can provide input
+#   optional             – May be skipped when prerequisites are missing
+#   requires_target      – Only include when a target column is provided
+#
+# The order in this list IS the execution order.
+# =============================================================================
+
+stages:
+  - key: "0_loading"
+    name: "Dataset Loading"
+    executor: LoadingStage
+    agent: file_parser_agent
+    description: "Load and validate the dataset file."
+
+  - key: "1_objective"
+    name: "Objective Inspection"
+    executor: ObjectiveStage
+    agent: inspector_agent
+    description: "Verify the evaluation objective."
+
+  - key: "2_quality"
+    name: "Data Quality Analysis"
+    executor: QualityStage
+    agent: quality_agent
+    description: "Analyse missing data & quality issues."
+
+  - key: "3_sensitive"
+    name: "Sensitive Attribute Detection"
+    executor: SensitiveDetectionStage
+    agent: recommendation_agent
+    description: "Detect protected / sensitive columns."
+    requires_confirmation: true
+
+  - key: "4_imbalance"
+    name: "Imbalance Analysis"
+    executor: ImbalanceStage
+    agent: quality_agent
+    description: "Measure class imbalance in sensitive columns."
+    requires_confirmation: true
+
+  - key: "4_5_target_fairness"
+    name: "Target Fairness Analysis"
+    executor: TargetFairnessStage
+    agent: fairness_agent
+    description: "Analyse fairness of target across sensitive groups."
+    optional: true
+    requires_confirmation: true
+    requires_target: true
+
+  - key: "5_recommendations"
+    name: "Recommendations"
+    executor: RecommendationsStage
+    agent: recommendation_agent
+    description: "Generate improvement recommendations."
+
+  - key: "6_bias_mitigation"
+    name: "Bias Mitigation"
+    executor: MitigationStage
+    agent: bias_mitigation_agent
+    description: "Apply bias-mitigation techniques."
+    optional: true
+    requires_confirmation: true
+    requires_target: true

@@ -10,7 +10,7 @@ import traceback
 import pandas as pd
 import streamlit as st
 
-from gui.utils import BASE_DIR, get_available_reports, parse_report_file, extract_json_block
+from gui.utils import BASE_DIR, get_available_reports, parse_report_file
 from gui.widgets.fairness import render_fairness_board, render_fairness_comparison_board
 
 

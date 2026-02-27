@@ -1,9 +1,3 @@
-"""
-Models Module
-
-This module contains model clients, agents, and the agent manager.
-"""
-
 from models.clients import (
     BaseModelClient,
     OpenRouterClient,
@@ -11,7 +5,7 @@ from models.clients import (
     LocalModelClient,
     ClientFactory
 )
-from models.agent_manager import AgentManager, create_agent_manager
+from models.agent_manager import AgentManager
 from models.agents import (
     BaseAgent,
     FunctionCallerAgent,
@@ -35,5 +29,4 @@ __all__ = [
     
     # Manager
     'AgentManager',
-    'create_agent_manager'
 ]

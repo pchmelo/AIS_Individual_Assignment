@@ -4,8 +4,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from tools.tool import Tool
 from tools.tool_manager import ToolManager
-import os
-import warnings
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
@@ -13,6 +11,9 @@ from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classification_report
 from sklearn.preprocessing import LabelEncoder
 from itertools import combinations as iter_combinations
+import warnings
+import os
+
 
 warnings.simplefilter(action='ignore', category=Warning)
 

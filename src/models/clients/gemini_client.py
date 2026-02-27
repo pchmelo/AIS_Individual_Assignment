@@ -1,16 +1,9 @@
-"""
-Google Gemini API Client
-
-Provides access to Google's Gemini models.
-"""
 
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict
 from dotenv import load_dotenv
-
 from models.clients.base_client import BaseModelClient, ModelInfo
 
-# Lazy import for google-generativeai
 try:
     import google.generativeai as genai
     GEMINI_AVAILABLE = True
@@ -25,35 +18,16 @@ class GeminiClient(BaseModelClient):
     """
     Client for Google Gemini API.
     
-    Requires google-generativeai package:
-        pip install google-generativeai
-    
     Environment Variables:
         GOOGLE_API_KEY: Your Google AI API key (required)
-    
-    Example:
-        client = GeminiClient(model="gemini-2.5-flash-lite")
-        response = client.generate([
-            {"role": "user", "content": "Hello!"}
-        ])
     """
-    
-    DEFAULT_MODEL = "gemini-2.5-flash-lite"
-    
+        
     def __init__(
         self, 
         model: str = None,
         api_key: str = None,
         **kwargs
     ):
-        """
-        Initialize Gemini client.
-        
-        Args:
-            model: Model name (e.g., "gemini-2.5-flash-lite", "gemini-pro")
-            api_key: API key (defaults to GOOGLE_API_KEY env var)
-            **kwargs: Additional configuration options
-        """
         super().__init__()
         
         if not GEMINI_AVAILABLE:
@@ -62,7 +36,7 @@ class GeminiClient(BaseModelClient):
                 "Install with: pip install google-generativeai"
             )
         
-        self.model_name = model or self.DEFAULT_MODEL
+        self.model_name = model
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         
         if not self.api_key:
@@ -84,21 +58,6 @@ class GeminiClient(BaseModelClient):
         max_tokens: int = 4096,
         **kwargs
     ) -> str:
-        """
-        Generate a response using the Gemini API.
-        
-        Args:
-            messages: List of message dicts with 'role' and 'content'.
-            temperature: Sampling temperature (0.0 to 1.0).
-            max_tokens: Maximum tokens to generate.
-            **kwargs: Additional parameters
-        
-        Returns:
-            Generated text response.
-        
-        Raises:
-            Exception: If API call fails.
-        """
         self.validate_messages(messages)
         
         # Convert messages to Gemini format
@@ -147,8 +106,6 @@ class GeminiClient(BaseModelClient):
             raise Exception(f"Gemini API Error: {str(e)}")
     
     def get_model_info(self) -> ModelInfo:
-        """Get model capabilities info."""
-        # Determine capabilities based on model name
         is_pro = "pro" in self.model_name.lower()
         is_vision = "vision" in self.model_name.lower()
         
