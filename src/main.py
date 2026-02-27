@@ -9,38 +9,54 @@ import os
 RUN_MODE = "gui"  # Options: "terminal" or "gui"
 # ============================================
 
+# Client selection: "openrouter", "gemini", "local", or None to use config.yml
+CLIENT_PROVIDER = None  # Set to None to use config.yml settings
+
+
+def get_config_path():
+    """Get path to the configuration file."""
+    return os.path.join(os.path.dirname(__file__), "models", "config.yml")
+
+
 def run_terminal_mode():
     print("Dataset Quality and Fairness Evaluation System")
     print("="*80)
     
-    # Model selection: 0=IBM Granite (Local), 1=Grok (API), 2=Gemini (API)
-    use_api = 2
-    datset_name = "adult-all"
-    target_class = "Income"  # Specify target column for fairness analysis
+    dataset_name = "adult-all"
+    target_class = "Income"
 
-    user_prompt = f"Evaluate the dataset '{datset_name}' for data quality and fairness issues. Target: {target_class}. Provide a detailed report highlighting any problems found and suggestions for improvement."
+    user_prompt = f"Evaluate the dataset '{dataset_name}' for data quality and fairness issues. Target: {target_class}. Provide a detailed report highlighting any problems found and suggestions for improvement."
     
     if not user_prompt:
         print("No input provided. Exiting.")
         return
     
-    model_names = {
-        0: "IBM Granite (Local)",
-        1: "Grok (API)",
-        2: "Google Gemini (API)"
-    }
-    
     print(f"\nInitializing pipeline...")
-    print(f"Model: {model_names.get(use_api, 'Unknown')}")
     print(f"User prompt: {user_prompt}")
     
     try:
-        pipeline = DatasetEvaluationPipeline(use_api_model=use_api)
+        if CLIENT_PROVIDER:
+            # Legacy mode with explicit provider
+            provider_map = {"openrouter": 1, "gemini": 2, "local": 0}
+            use_api = provider_map.get(CLIENT_PROVIDER.lower(), 1)
+            pipeline = DatasetEvaluationPipeline(use_api_model=use_api)
+        else:
+            # Use configuration file
+            config_path = get_config_path()
+            if os.path.exists(config_path):
+                pipeline = DatasetEvaluationPipeline(config_path=config_path)
+            else:
+                print(f"Config file not found: {config_path}")
+                print("Falling back to OpenRouter...")
+                pipeline = DatasetEvaluationPipeline(use_api_model=1)
+        
         results = pipeline.evaluate_dataset(user_prompt)
         pipeline.generate_report()
         print("\nEvaluation completed successfully.")
     except Exception as e:
         print(f"\nError: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 def run_gui_mode():
     print("Launching GUI mode...")
@@ -51,7 +67,7 @@ def run_gui_mode():
     print("="*80)
     
     try:
-        gui_app_path = os.path.join(os.path.dirname(__file__), "gui_app.py")
+        gui_app_path = os.path.join(os.path.dirname(__file__), "gui", "app.py")
         
         subprocess.run([
             sys.executable, "-m", "streamlit", "run",

@@ -3,45 +3,187 @@ import os
 import re
 import hashlib
 from datetime import datetime
-from typing import Dict, Any
-from agents.function_caller_agent import FunctionCallerAgent
-from agents.data_analyst_agent import DataAnalystAgent
-from agents.conversational_agent import ConversationalAgent
-from agents.model_client import LocalModelClient, OpenRouterClient, GeminiClient
+from typing import Dict, Any, List, Optional
+from models.agents.function_caller_agent import FunctionCallerAgent
+from models.agents.data_analyst_agent import DataAnalystAgent
+from models.agents.conversational_agent import ConversationalAgent
+from models.clients import BaseModelClient
+from models.agent_manager import AgentManager
 from tools.fairness_tools import FairnessTools
 from tools.bias_mitigation_tools import BiasMitigationTools
+from stage import Stage, NavigationAction
 import pandas as pd
 import numpy as np
 
 
 class DatasetEvaluationPipeline:
-    def __init__(self, use_api_model: int = 0):
+    """
+    Pipeline for evaluating datasets for quality and fairness issues.
+    
+    Can be initialized in two ways:
+    1. Direct mode (use_api_model parameter) - traditional initialization
+    2. Config mode (config_path or agent_manager) - uses AgentManager
+    
+    Example (direct mode):
+        pipeline = DatasetEvaluationPipeline(use_api_model=1)  # OpenRouter
+        
+    Example (config mode):
+        pipeline = DatasetEvaluationPipeline(config_path="config.yml")
+        # or
+        manager = AgentManager.from_yaml("config.yml")
+        pipeline = DatasetEvaluationPipeline(agent_manager=manager)
+    """
+    
+    def __init__(
+        self, 
+        use_api_model: int = None,
+        config_path: str = None,
+        agent_manager: AgentManager = None,
+        client: BaseModelClient = None,
+        default_model: str = None
+    ):
+        """
+        Initialize the pipeline.
+        
+        Args:
+            use_api_model: Legacy mode - 0=Local, 1=OpenRouter, 2=Gemini
+            config_path: Path to YAML configuration file
+            agent_manager: Pre-configured AgentManager instance
+            client: Pre-configured model client
+            default_model: Override the default_model from config (model name)
+        """
         self.fairness_tools = FairnessTools()
         self.bias_mitigation_tools = BiasMitigationTools()
+        self.agent_manager = None
         
+        # Determine initialization mode
+        if agent_manager is not None:
+            # Use provided AgentManager
+            self._init_from_manager(agent_manager)
+        elif config_path is not None:
+            # Load from config file
+            self._init_from_config(config_path, default_model=default_model)
+        elif client is not None:
+            # Use provided client
+            self.model_client = client
+            self._initialize_agents()
+        elif use_api_model is not None:
+            # Legacy direct initialization
+            self._init_legacy(use_api_model)
+        else:
+            # Default to config file if it exists
+            default_config = os.path.join(
+                os.path.dirname(__file__), 
+                "models", "config.yml"
+            )
+            if os.path.exists(default_config):
+                self._init_from_config(default_config, default_model=default_model)
+            else:
+                # Fallback to OpenRouter
+                self._init_legacy(1)
+        
+        self.current_dataset = None
+        self.user_objective = None
+        self.evaluation_results = {}
+
+        # Dynamic pipeline state
+        self._stages: List[Stage] = []
+        self._current_stage_index: int = 0
+        self._pipeline_ctx: Dict[str, Any] = {}
+        self._chat_messages: List[Dict[str, str]] = []
+        
+        print("Pipeline initialized")
+    
+    def _init_legacy(self, use_api_model: int):
+        """Initialize using legacy mode (direct client selection)."""
         if use_api_model == 1:
+            from models.clients import OpenRouterClient
             self.model_client = OpenRouterClient(
                 model="x-ai/grok-4.1-fast:free",
             )
             print("Model: Grok (API)")
         elif use_api_model == 2:
+            from models.clients import GeminiClient
             self.model_client = GeminiClient(
                 model="gemini-2.5-flash-lite"
             )
             print("Model: Google Gemini (API)")
         else:
-            self.model_client = LocalModelClient("ibm-granite/granite-3b-code-instruct")
+            from models.clients import LocalModelClient
+            self.model_client = LocalModelClient(model="ibm-granite/granite-3b-code-instruct")
             print("Model: IBM Granite (Local)")
         
         self._initialize_agents()
+    
+    def _init_from_config(self, config_path: str, default_model: str = None):
+        """Initialize from YAML configuration file."""
+        self.agent_manager = AgentManager.from_yaml(config_path)
+        # Allow runtime override of default_model
+        if default_model:
+            self.agent_manager.config["default_model"] = default_model
+        self.model_client = self.agent_manager.get_client()
+        self._initialize_agents_from_manager()
+        print(f"Loaded configuration from: {config_path}")
+    
+    def _init_from_manager(self, manager: AgentManager):
+        """Initialize from provided AgentManager."""
+        self.agent_manager = manager
+        self.model_client = manager.get_client()
+        self._initialize_agents_from_manager()
+    
+    def _initialize_agents_from_manager(self):
+        """Initialize agents using AgentManager."""
+        # Get agents for each stage from manager
+        try:
+            self.file_parser_agent = self.agent_manager.get_primary_agent_for_stage("parsing")
+            self.inspector_agent = self.agent_manager.get_primary_agent_for_stage("inspection")
+            self.bias_mitigation_agent = self.agent_manager.get_primary_agent_for_stage("mitigation")
+            self.quality_agent = self.agent_manager.get_primary_agent_for_stage("quality_analysis")
+            self.fairness_agent = self.agent_manager.get_primary_agent_for_stage("fairness_analysis")
+            self.recommendation_agent = self.agent_manager.get_primary_agent_for_stage("recommendation")
+        except (ValueError, KeyError) as e:
+            # Fallback to direct initialization if manager doesn't have all agents
+            print(f"Warning: Some agents not found in config, using defaults: {e}")
+            self._initialize_agents()
         
-        self.current_dataset = None
-        self.user_objective = None
-        self.evaluation_results = {}
+        # Fill in any missing agents
+        if self.file_parser_agent is None:
+            self.file_parser_agent = FunctionCallerAgent(
+                tool_manager=self.fairness_tools,
+                model_client=self.model_client,
+                reflect_on_tool_use=True
+            )
+        if self.inspector_agent is None:
+            self.inspector_agent = FunctionCallerAgent(
+                tool_manager=self.fairness_tools,
+                model_client=self.model_client,
+                reflect_on_tool_use=True
+            )
+        if self.bias_mitigation_agent is None:
+            self.bias_mitigation_agent = FunctionCallerAgent(
+                tool_manager=self.bias_mitigation_tools,
+                model_client=self.model_client,
+                reflect_on_tool_use=True
+            )
+        if self.quality_agent is None:
+            self.quality_agent = DataAnalystAgent(
+                tool_manager=self.fairness_tools,
+                model_client=self.model_client
+            )
+        if self.fairness_agent is None:
+            self.fairness_agent = DataAnalystAgent(
+                tool_manager=self.fairness_tools,
+                model_client=self.model_client
+            )
+        if self.recommendation_agent is None:
+            self.recommendation_agent = ConversationalAgent(
+                model_client=self.model_client
+            )
         
-        print("Agents initialized")
+        print("All agents initialized from configuration")
     
     def _initialize_agents(self):
+        """Initialize agents directly (legacy mode)."""
         self.file_parser_agent = FunctionCallerAgent(
             tool_manager=self.fairness_tools,
             model_client=self.model_client,
@@ -75,7 +217,304 @@ class DatasetEvaluationPipeline:
         )
         
         print("All agents initialized")
-    
+
+    # ==================================================================
+    # Dynamic stage-based pipeline API
+    # ==================================================================
+
+    def build_stages(self, dataset_name: str, target_column: Optional[str] = None,
+                     user_prompt: str = "") -> List[Stage]:
+        """Build (or rebuild) the ordered list of stages for an evaluation.
+
+        This must be called after setting ``current_dataset``, ``target_column``,
+        etc.  The returned list is also stored in ``self._stages``.
+        """
+
+        self.current_dataset = dataset_name
+        self.target_column = target_column
+        self.user_objective = user_prompt
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.report_dir = os.path.join("reports", f"{dataset_name}_{timestamp}")
+        self.images_dir = os.path.join(self.report_dir, "images")
+        os.makedirs(self.images_dir, exist_ok=True)
+
+        self.evaluation_results = {
+            "dataset": dataset_name,
+            "target_column": target_column,
+            "user_objective": user_prompt,
+            "report_directory": self.report_dir,
+            "stages": {},
+        }
+
+        # Shared context dict that every stage can read/write
+        self._pipeline_ctx = {
+            "dataset_name": dataset_name,
+            "target_column": target_column,
+            "user_prompt": user_prompt,
+            "report_dir": self.report_dir,
+            "images_dir": self.images_dir,
+            "confirmed_sensitive_columns": None,
+            "proxy_config": {"enabled": False},
+            "selected_pairs": None,
+            "mitigation_config": None,
+        }
+
+        stages: List[Stage] = [
+            Stage(
+                key="0_loading",
+                name="Dataset Loading",
+                agent=self.file_parser_agent,
+                execute_fn=self._exec_stage_0,
+                description="Load and validate the dataset file.",
+            ),
+            Stage(
+                key="1_objective",
+                name="Objective Inspection",
+                agent=self.inspector_agent,
+                execute_fn=self._exec_stage_1,
+                description="Verify the evaluation objective.",
+            ),
+            Stage(
+                key="2_quality",
+                name="Data Quality Analysis",
+                agent=self.quality_agent,
+                execute_fn=self._exec_stage_2,
+                description="Analyse missing data & quality issues.",
+            ),
+            Stage(
+                key="3_sensitive",
+                name="Sensitive Attribute Detection",
+                agent=self.recommendation_agent,
+                execute_fn=self._exec_stage_3,
+                description="Detect protected / sensitive columns.",
+                requires_confirmation=True,
+            ),
+            Stage(
+                key="4_imbalance",
+                name="Imbalance Analysis",
+                agent=self.quality_agent,
+                execute_fn=self._exec_stage_4,
+                description="Measure class imbalance in sensitive columns.",
+                requires_confirmation=True,
+            ),
+        ]
+
+        if target_column:
+            stages.append(Stage(
+                key="4_5_target_fairness",
+                name="Target Fairness Analysis",
+                agent=self.fairness_agent,
+                execute_fn=self._exec_stage_4_5,
+                description="Analyse fairness of target across sensitive groups.",
+                optional=True,
+                requires_confirmation=True,
+            ))
+
+        stages.append(Stage(
+            key="5_recommendations",
+            name="Recommendations",
+            agent=self.recommendation_agent,
+            execute_fn=self._exec_stage_5,
+            description="Generate improvement recommendations.",
+        ))
+
+        if target_column:
+            stages.append(Stage(
+                key="6_bias_mitigation",
+                name="Bias Mitigation",
+                agent=self.bias_mitigation_agent,
+                execute_fn=self._exec_stage_6,
+                description="Apply bias-mitigation techniques.",
+                optional=True,
+                requires_confirmation=True,
+            ))
+
+        self._stages = stages
+        self._current_stage_index = 0
+        return stages
+
+    # ---- navigation --------------------------------------------------
+
+    @property
+    def stages(self) -> List[Stage]:
+        return self._stages
+
+    @property
+    def current_stage_index(self) -> int:
+        return self._current_stage_index
+
+    @current_stage_index.setter
+    def current_stage_index(self, value: int):
+        self._current_stage_index = max(0, min(value, len(self._stages) - 1))
+
+    @property
+    def current_stage(self) -> Optional[Stage]:
+        if 0 <= self._current_stage_index < len(self._stages):
+            return self._stages[self._current_stage_index]
+        return None
+
+    @property
+    def pipeline_ctx(self) -> Dict[str, Any]:
+        return self._pipeline_ctx
+
+    @property
+    def is_finished(self) -> bool:
+        return self._current_stage_index >= len(self._stages)
+
+    def navigate(self, action: NavigationAction, user_context: str = "") -> Dict[str, Any]:
+        """Perform a navigation action and return the stage result.
+
+        Args:
+            action: forward / backward / repeat.
+            user_context: Free-form text from the user that provides
+                          additional context for the stage agent.
+
+        Returns:
+            The result dict of the executed stage (or an info dict for backward).
+        """
+        if action == NavigationAction.BACKWARD:
+            return self._go_backward(user_context)
+        elif action == NavigationAction.REPEAT:
+            return self._go_repeat(user_context)
+        else:
+            return self._go_forward(user_context)
+
+    def _go_forward(self, user_context: str = "") -> Dict[str, Any]:
+        if self._current_stage_index >= len(self._stages):
+            return {"status": "finished", "message": "All stages completed."}
+
+        stage = self._stages[self._current_stage_index]
+        stage.user_context = user_context or None
+        result = stage.execute(self._pipeline_ctx)
+        # Persist into evaluation_results
+        self.evaluation_results["stages"][stage.key] = result
+        self._current_stage_index += 1
+        return result
+
+    def _go_backward(self, user_context: str = "") -> Dict[str, Any]:
+        if self._current_stage_index <= 0:
+            return {"status": "info", "message": "Already at the first stage."}
+        self._current_stage_index -= 1
+        stage = self._stages[self._current_stage_index]
+        stage.reset()
+        # Remove from evaluation_results so it gets re-run
+        self.evaluation_results["stages"].pop(stage.key, None)
+        return {"status": "rewound", "message": f"Returned to **{stage.name}**. It will re-run on the next forward."}
+
+    def _go_repeat(self, user_context: str = "") -> Dict[str, Any]:
+        idx = max(0, self._current_stage_index - 1)
+        stage = self._stages[idx]
+        stage.reset()
+        stage.user_context = user_context or None
+        self.evaluation_results["stages"].pop(stage.key, None)
+        result = stage.execute(self._pipeline_ctx)
+        self.evaluation_results["stages"][stage.key] = result
+        return result
+
+    # ---- chat message helpers ----------------------------------------
+
+    @property
+    def chat_messages(self) -> List[Dict[str, str]]:
+        return self._chat_messages
+
+    def add_chat_message(self, role: str, content: str):
+        self._chat_messages.append({"role": role, "content": content})
+
+    # ---- stage execution wrappers ------------------------------------
+
+    def _exec_stage_0(self, stage: Stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
+        """Load dataset."""
+        return self._stage_0_load_dataset(ctx["dataset_name"], extra_context=stage.user_context)
+
+    def _exec_stage_1(self, stage: Stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
+        prompt = ctx["user_prompt"]
+        if stage.user_context:
+            prompt += f"\n\n[USER INSTRUCTION — you MUST follow this]: {stage.user_context}"
+        return self._stage_1_objective_inspection(prompt)
+
+    def _exec_stage_2(self, stage: Stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
+        return self._stage_2_data_quality(ctx["dataset_name"], extra_context=stage.user_context)
+
+    def _exec_stage_3(self, stage: Stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
+        return self._stage_3_sensitive_detection(ctx["dataset_name"], ctx["target_column"], extra_context=stage.user_context)
+
+    def _exec_stage_4(self, stage: Stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
+        # Apply confirmed sensitive columns if provided via context
+        confirmed = ctx.get("confirmed_sensitive_columns")
+        if confirmed:
+            self.evaluation_results["stages"].setdefault("3_sensitive", {})["sensitive_columns"] = confirmed
+        return self._stage_4_imbalance_analysis(ctx["dataset_name"], ctx.get("proxy_config"), extra_context=stage.user_context)
+
+    def _exec_stage_4_5(self, stage: Stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
+        return self._stage_4_5_target_fairness_analysis(
+            ctx["dataset_name"],
+            ctx["target_column"],
+            selected_pairs=ctx.get("selected_pairs"),
+            proxy_config=ctx.get("proxy_config"),
+            extra_context=stage.user_context,
+        )
+
+    def _exec_stage_5(self, stage: Stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
+        return self._stage_6_recommendations(extra_context=stage.user_context)
+
+    def _exec_stage_6(self, stage: Stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
+        """Bias mitigation – delegates to apply_bias_mitigation per method."""
+        mitigation_cfg = ctx.get("mitigation_config")
+        if not mitigation_cfg or not mitigation_cfg.get("methods"):
+            return {"status": "skipped", "message": "No mitigation methods selected."}
+
+        method_map = {
+            "Reweighting": "reweighting",
+            "SMOTE": "smote",
+            "Random Oversampling": "oversampling",
+            "Random Undersampling": "undersampling",
+        }
+
+        sensitive_cols = self.evaluation_results.get("stages", {}).get(
+            "3_sensitive", {}
+        ).get("sensitive_columns", [])
+
+        all_results = {}
+        selected_methods = mitigation_cfg["methods"]
+
+        for method_name, method_params in selected_methods.items():
+            try:
+                mitigation_result = self.apply_bias_mitigation(
+                    method=method_map.get(method_name, method_name.lower()),
+                    dataset_name=ctx["dataset_name"],
+                    target_column=ctx["target_column"],
+                    sensitive_columns=method_params.get("sensitive_columns", sensitive_cols),
+                    **{k: v for k, v in method_params.items() if k != "sensitive_columns"},
+                )
+                if mitigation_result.get("status") == "success":
+                    comparison_result = self.compare_mitigation_results(
+                        original_dataset=ctx["dataset_name"],
+                        mitigated_dataset=mitigation_result.get("output_file"),
+                        target_column=ctx["target_column"],
+                        sensitive_columns=sensitive_cols,
+                    )
+                    all_results[method_name] = {
+                        "status": "success",
+                        "method_params": method_params,
+                        "mitigation_result": mitigation_result,
+                        "comparison_result": comparison_result,
+                        "fairness_comparison": mitigation_result.get("fairness_comparison"),
+                    }
+                else:
+                    all_results[method_name] = {
+                        "status": "error",
+                        "error": mitigation_result.get("message", "Unknown error"),
+                    }
+            except Exception as e:
+                all_results[method_name] = {"status": "error", "error": str(e)}
+
+        return {
+            "status": "success",
+            "methods": all_results,
+            "applied_methods": list(selected_methods.keys()),
+        }
+
     def _extract_dataset_name(self, user_prompt: str) -> str:
         prompt_lower = user_prompt.lower()
         words = user_prompt.split()
@@ -201,12 +640,14 @@ class DatasetEvaluationPipeline:
         
         return self.evaluation_results
     
-    def _stage_0_load_dataset(self, dataset_name: str) -> dict:
+    def _stage_0_load_dataset(self, dataset_name: str, extra_context: str = None) -> dict:
         print("Tool: load_dataset")
         tool_result = self.fairness_tools.load_dataset(dataset_name)
         print(f"Tool result: {tool_result}")
         
         prompt = f"The dataset '{dataset_name}' has been loaded with the following information: {tool_result}. Provide a brief summary of the dataset."
+        if extra_context:
+            prompt += f"\n\n[USER INSTRUCTION — you MUST follow this]: {extra_context}"
         agent_analysis = self.file_parser_agent.run(prompt)
         print(f"Agent analysis: {agent_analysis}")
         
@@ -253,13 +694,16 @@ class DatasetEvaluationPipeline:
         except Exception as e:
             return f"Error serializing data: {str(e)}"
 
-    def _stage_2_data_quality(self, dataset_name: str) -> Dict[str, Any]:
+    def _stage_2_data_quality(self, dataset_name: str, extra_context: str = None) -> Dict[str, Any]:
         print("Tool: check_missing_data")
         tool_result = self.fairness_tools.check_missing_data(dataset_name)
         print(f"Tool result: {self._safe_json_dumps(tool_result)}")
         
         print("\nAgent analyzing quality results...")
-        analysis = self.quality_agent.run(f"Analyze this missing data report and provide insights: {self._safe_json_dumps(tool_result)}")
+        quality_prompt = f"Analyze this missing data report and provide insights: {self._safe_json_dumps(tool_result)}"
+        if extra_context:
+            quality_prompt += f"\n\n[USER INSTRUCTION — you MUST follow this]: {extra_context}"
+        analysis = self.quality_agent.run(quality_prompt)
         print(f"Quality analysis complete: {len(str(analysis))} chars")
         
         return {
@@ -289,7 +733,7 @@ class DatasetEvaluationPipeline:
         
         return summary
     
-    def _stage_3_sensitive_detection(self, dataset_name: str, target_column: str = None) -> Dict[str, Any]:
+    def _stage_3_sensitive_detection(self, dataset_name: str, target_column: str = None, extra_context: str = None) -> Dict[str, Any]:
         print("Tool: detect_sensitive_attributes")
         columns_result = self.fairness_tools.detect_sensitive_attributes(dataset_name)
         print(f"Tool result: {len(self._safe_json_dumps(columns_result))} chars")
@@ -301,6 +745,10 @@ class DatasetEvaluationPipeline:
         target_exclusion_note = ""
         if target_column:
             target_exclusion_note = f"\n\nIMPORTANT: EXCLUDE the target column '{target_column}' from sensitive attributes - it's the variable being predicted, not a protected attribute."
+        
+        extra_context_note = ""
+        if extra_context:
+            extra_context_note = f"\n\n[USER INSTRUCTION — you MUST follow this]: {extra_context}"
         
         analysis_prompt = f"""Analyze this dataset and identify ALL SENSITIVE/PROTECTED attribute columns.
 
@@ -325,6 +773,7 @@ class DatasetEvaluationPipeline:
                                 Column: [exact_column_name] | Reason: [why_sensitive] | Values: [key_values]
 
                                 List ALL sensitive columns - don't miss Race, Sex, Native-country if present.
+                                {extra_context_note}
                             """
         
         sensitive_list = self.recommendation_agent.run(analysis_prompt, max_tokens=4096)
@@ -350,7 +799,7 @@ class DatasetEvaluationPipeline:
             "sensitive_columns": identified_columns
         }
     
-    def _stage_4_imbalance_analysis(self, dataset_name: str, proxy_config: dict = None) -> Dict[str, Any]:
+    def _stage_4_imbalance_analysis(self, dataset_name: str, proxy_config: dict = None, extra_context: str = None) -> Dict[str, Any]:
         sensitive_cols = self.evaluation_results["stages"]["3_sensitive"].get("sensitive_columns", [])
         print(f"Analyzing imbalance for {len(sensitive_cols)} sensitive columns: {sensitive_cols}")
         
@@ -422,6 +871,8 @@ class DatasetEvaluationPipeline:
 
                                 Focus ONLY on the sensitive columns listed above.
                             """
+        if extra_context:
+            analysis_prompt += f"\n\n[USER INSTRUCTION — you MUST follow this]: {extra_context}"
         
         analysis = self.quality_agent.run(analysis_prompt)
         print(f"Imbalance analysis complete: {len(str(analysis))} chars")
@@ -436,7 +887,7 @@ class DatasetEvaluationPipeline:
         }
     
     def _stage_4_5_target_fairness_analysis(self, dataset_name: str, target_column: str, selected_pairs: list = None,
-                                          proxy_config: dict = None) -> Dict[str, Any]:
+                                          proxy_config: dict = None, extra_context: str = None) -> Dict[str, Any]:
         sensitive_cols = self.evaluation_results["stages"]["3_sensitive"].get("sensitive_columns", [])
         
         if target_column in sensitive_cols:
@@ -540,6 +991,8 @@ class DatasetEvaluationPipeline:
 
                                 Focus on quantitative disparities and their implications.
                             """
+        if extra_context:
+            analysis_prompt += f"\n\n[USER INSTRUCTION — you MUST follow this]: {extra_context}"
         
         analysis = self.fairness_agent.run(analysis_prompt)
         print(f"Target fairness analysis complete: {len(str(analysis))} chars")
@@ -553,9 +1006,11 @@ class DatasetEvaluationPipeline:
             "analyzed_sensitive_columns": sensitive_cols
         }
     
-    def _stage_6_recommendations(self) -> Dict[str, Any]:
+    def _stage_6_recommendations(self, extra_context: str = None) -> Dict[str, Any]:
         print(f"Integrating findings from {len(self.evaluation_results['stages'])} stages completed")
         findings_summary = self._compile_findings()
+        
+        extra_context_note = f"\n\n[USER INSTRUCTION — you MUST follow this]: {extra_context}" if extra_context else ""
         
         prompt = f"""Based on evaluation results for {self.current_dataset}, provide:
         1. Top 3 critical issues
@@ -563,7 +1018,7 @@ class DatasetEvaluationPipeline:
         3. Priority order
         4. Expected impact
         
-        Findings: {findings_summary}"""
+        Findings: {findings_summary}{extra_context_note}"""
         
         recommendations = self.recommendation_agent.run(prompt)
         print(f"Recommendations: {recommendations}")

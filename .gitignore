@@ -161,7 +161,6 @@ $RECYCLE.BIN/
 *.pth
 *.ckpt
 *.safetensors
-models/
 checkpoints/
 *.h5
 *.pkl

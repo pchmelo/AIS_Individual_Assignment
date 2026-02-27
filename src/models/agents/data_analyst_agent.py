@@ -1,7 +1,9 @@
-from agents.base_agent import BaseAgent
-from agents.model_client import BaseModelClient
-from tools.tool_manager import ToolManager
+"""Data Analyst Agent - Analyzes data and provides insights."""
+
 import json
+from models.agents.base_agent import BaseAgent
+from models.clients.base_client import BaseModelClient
+from tools.tool_manager import ToolManager
 
 class DataAnalystAgent(BaseAgent):    
     def __init__(self, tool_manager: ToolManager, model_client: BaseModelClient = None, model_name: str = None):

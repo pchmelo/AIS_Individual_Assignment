@@ -1,6 +1,8 @@
+"""Function Caller Agent - Executes tools based on LLM decisions."""
+
 import json
-from agents.base_agent import BaseAgent
-from agents.model_client import BaseModelClient
+from models.agents.base_agent import BaseAgent
+from models.clients.base_client import BaseModelClient
 from tools.tool_manager import ToolManager
 
 class FunctionCallerAgent(BaseAgent):
