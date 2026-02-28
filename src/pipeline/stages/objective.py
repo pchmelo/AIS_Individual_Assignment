@@ -1,14 +1,16 @@
-"""Stage 1 – Objective Inspection."""
-
 from __future__ import annotations
 from typing import Any, Dict
 
 from pipeline.stages.base import BaseStageExecutor
 
 
-class ObjectiveStage(BaseStageExecutor):
-    """Validate the user's evaluation objective."""
+"""
+Stage 1 – Objective Inspection.
+Validate the user's evaluation objective.
+"""
 
+class ObjectiveStage(BaseStageExecutor):
+    
     def __call__(self, stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
         prompt = ctx["user_prompt"]
         if stage.user_context:

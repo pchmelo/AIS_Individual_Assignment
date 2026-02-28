@@ -1,10 +1,3 @@
-"""
-Result Display Widgets
-
-Reusable Streamlit components for rendering stage-level data results
-(quality, sensitive columns, imbalance, fairness).
-"""
-
 import os
 import streamlit as st
 import pandas as pd
@@ -65,9 +58,9 @@ def display_sensitive_results(stage_data: dict):
 # ---------------------------------------------------------------------------
 
 def display_imbalance_results(stage_result: dict):
-    """Render imbalance analysis including optional proxy-model board."""
+    """Render imbalance analysis including optional ML model board."""
     tool_result = stage_result.get("tool_result", {})
-    proxy_results = stage_result.get("proxy_model_results")
+    ml_results = stage_result.get("ml_model_results")
 
     st.info("Class imbalance analysis focuses on detecting skewed distributions in sensitive columns.")
 
@@ -75,8 +68,8 @@ def display_imbalance_results(stage_result: dict):
         st.error(f"Error analyzing imbalance: {tool_result.get('message', 'Unknown error')}")
         return
 
-    if proxy_results and proxy_results.get("status") == "success":
-        render_fairness_board(proxy_results, title="Proxy Model Fairness Analysis (Stage 4)")
+    if ml_results and ml_results.get("status") == "success":
+        render_fairness_board(ml_results, title="ML Model Fairness Analysis (Stage 4)")
 
     if "imbalance_report" in tool_result:
         report = tool_result["imbalance_report"]
@@ -92,20 +85,20 @@ def display_imbalance_results(stage_result: dict):
 
 
 # ---------------------------------------------------------------------------
-# Stage 4.5 – Target Fairness Analysis  (the *redefined* version)
+# Stage 4.5 – Target Fairness Analysis 
 # ---------------------------------------------------------------------------
 
 def display_fairness_results(stage_result: dict):
-    """Render target fairness with intersectional proxy + visualizations."""
+    """Render target fairness with intersectional ML + visualizations."""
     tool_result = stage_result.get("tool_result", {})
-    intersectional_proxy = stage_result.get("intersectional_proxy_results")
+    intersectional_ml = stage_result.get("intersectional_ml_results")
 
     if tool_result.get("status") == "success":
         st.markdown(f"**Target Column:** {tool_result.get('target_column')}")
 
-        if intersectional_proxy:
+        if intersectional_ml:
             render_fairness_board(
-                intersectional_proxy,
+                intersectional_ml,
                 title="Target Fairness Analysis (Stage 4.5 - Intersectional)",
             )
 

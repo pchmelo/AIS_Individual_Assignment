@@ -1,5 +1,3 @@
-"""Stage 3 – Sensitive Attribute Detection."""
-
 from __future__ import annotations
 
 import re
@@ -8,8 +6,12 @@ from typing import Any, Dict, List
 from pipeline.stages.base import BaseStageExecutor
 
 
+"""
+Stage 3 – Sensitive Attribute Detection.
+Detect protected / sensitive columns using an LLM.
+"""
+
 class SensitiveDetectionStage(BaseStageExecutor):
-    """Detect protected / sensitive columns using an LLM."""
 
     def __call__(self, stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
         columns_result = ctx["fairness_tools"].detect_sensitive_attributes(
@@ -73,9 +75,6 @@ class SensitiveDetectionStage(BaseStageExecutor):
             "sensitive_columns": identified,
         }
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _create_simplified_column_summary(columns_data: List[Dict]) -> str:

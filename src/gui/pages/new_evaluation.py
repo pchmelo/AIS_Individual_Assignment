@@ -1,11 +1,3 @@
-"""
-New Evaluation page -- chatbot-style interactive pipeline.
-
-The pipeline is presented as a conversation between the user and the system.
-Below the chat area there is a text-input field, an action selector
-(Forward / Backward / Repeat) and a Send button.
-"""
-
 import os
 import traceback
 from datetime import datetime
@@ -31,18 +23,12 @@ from gui.utils import (
 from gui.widgets.stage_display import display_stage_results
 
 
-# ======================================================================
-# Public entry-point
-# ======================================================================
-
 def new_evaluation_page():
-    """Render the full *New Evaluation* page (sidebar + chatbot area)."""
+    """Render the full page (sidebar + chatbot area)."""
 
     st.markdown("<div class='main-header'>New Evaluation</div>", unsafe_allow_html=True)
 
-    # ------------------------------------------------------------------
     # Sidebar -- configuration
-    # ------------------------------------------------------------------
     with st.sidebar:
         st.markdown("### Configuration")
 
@@ -149,9 +135,7 @@ def new_evaluation_page():
                     }.get(s.status, "\u2b1c")
                     st.caption(f"{icon} {s.name}")
 
-    # ------------------------------------------------------------------
     # Main area -- Chat interface
-    # ------------------------------------------------------------------
     if st.session_state.pipeline_started:
         _render_chat_interface()
     else:
@@ -169,10 +153,7 @@ def new_evaluation_page():
         )
 
 
-# ======================================================================
 # Pipeline initialisation
-# ======================================================================
-
 def _initialize_pipeline():
     """Create the pipeline, build stages, and seed the first chat message."""
     try:
@@ -205,6 +186,7 @@ def _initialize_pipeline():
                 target_column=st.session_state.target_column,
                 user_prompt=prompt,
             )
+
             # Fix report_dir to project root
             pipeline.report_dir = os.path.join(
                 BASE_DIR,
@@ -243,10 +225,7 @@ def _initialize_pipeline():
         st.session_state.pipeline_started = False
 
 
-# ======================================================================
 # Chat interface
-# ======================================================================
-
 def _render_chat_interface():
     """Render the chat log, stage results, and input controls."""
 
@@ -372,8 +351,8 @@ def _handle_submit(pipeline, user_text, action_choice):
             pipeline.pipeline_ctx["confirmed_sensitive_columns"] = (
                 st.session_state.confirmed_sensitive_columns
             )
-        if st.session_state.proxy_config:
-            pipeline.pipeline_ctx["proxy_config"] = st.session_state.proxy_config
+        if st.session_state.ml_config:
+            pipeline.pipeline_ctx["ml_config"] = st.session_state.ml_config
 
         # Parse user text for special stage instructions
         _apply_user_text_overrides(pipeline, cur_stage, user_text)
@@ -547,4 +526,4 @@ def _reset_state():
     st.session_state.evaluation_results = None
     st.session_state.chat_messages = []
     st.session_state.confirmed_sensitive_columns = None
-    st.session_state.proxy_config = {"enabled": False}
+    st.session_state.ml_config = {"enabled": False}

@@ -1,9 +1,5 @@
-"""
-pipeline.stages – Individual stage executor classes.
-"""
-
 from pipeline.stages.base import BaseStageExecutor, safe_json_dumps
-from pipeline.stages.loading import LoadingStage
+from pipeline.stages.dataset_loading import LoadingStage
 from pipeline.stages.objective import ObjectiveStage
 from pipeline.stages.quality import QualityStage
 from pipeline.stages.sensitive import SensitiveDetectionStage

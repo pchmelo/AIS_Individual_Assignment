@@ -1,7 +1,3 @@
-"""
-Main (landing) page.
-"""
-
 import streamlit as st
 
 

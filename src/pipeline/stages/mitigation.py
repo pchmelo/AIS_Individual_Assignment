@@ -1,5 +1,3 @@
-"""Stage 6 – Bias Mitigation."""
-
 from __future__ import annotations
 
 import os
@@ -8,9 +6,13 @@ from typing import Any, Dict
 from pipeline.stages.base import BaseStageExecutor, safe_json_dumps
 
 
-class MitigationStage(BaseStageExecutor):
-    """Apply bias-mitigation techniques and compare fairness metrics."""
+"""
+Stage 6 – Bias Mitigation.
+Apply bias-mitigation techniques and compare fairness metrics.
+"""
 
+
+class MitigationStage(BaseStageExecutor):
     METHOD_MAP = {
         "Reweighting": "reweighting",
         "SMOTE": "smote",
@@ -72,7 +74,6 @@ class MitigationStage(BaseStageExecutor):
         }
 
 
-# ── Module-level helpers (kept out of the class for reuse) ───────────
 
 
 def _apply_single_mitigation(
@@ -82,6 +83,7 @@ def _apply_single_mitigation(
     extra_params: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Apply one bias-mitigation technique and optionally run a fairness comparison."""
+    
     bias_tools = ctx["bias_mitigation_tools"]
     fairness_tools = ctx["fairness_tools"]
     dataset_name = ctx["dataset_name"]
@@ -115,7 +117,7 @@ def _apply_single_mitigation(
     else:
         return {"status": "error", "message": f"Unknown method: {method}"}
 
-    # ── Fairness comparison against baseline ─────────────────────────
+    # Fairness comparison against baseline
     if result.get("status") == "success" and result.get("output_file"):
         baseline = ctx["results"].get("4_imbalance", {}).get("baseline_fairness_metrics")
         analyzed_cols = ctx["results"].get("4_imbalance", {}).get("analyzed_columns", [])
@@ -126,7 +128,7 @@ def _apply_single_mitigation(
             and analyzed_cols
             and target_column
         ):
-            mitigated_metrics = fairness_tools.train_and_evaluate_proxy_model(
+            mitigated_metrics = fairness_tools.train_and_evaluate_ml_model(
                 dataset_name=result["output_file"],
                 target_column=target_column,
                 sensitive_columns=analyzed_cols,
@@ -149,6 +151,7 @@ def _compare_datasets(
     agent,
 ) -> Dict[str, Any]:
     """Compare original vs mitigated dataset and have the agent analyse."""
+
     result = ctx["bias_mitigation_tools"].compare_datasets(
         original_dataset=ctx["dataset_name"],
         mitigated_dataset=mitigated_dataset,
@@ -176,6 +179,7 @@ def _compare_fairness_metrics(
     method_name: str,
 ) -> Dict[str, Any]:
     """Compute per-attribute fairness improvement between baseline and mitigated."""
+    
     if not baseline or baseline.get("status") != "success":
         return {"status": "error", "message": "Invalid baseline metrics"}
     if not mitigated or mitigated.get("status") != "success":

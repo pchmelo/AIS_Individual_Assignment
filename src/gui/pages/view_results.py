@@ -1,7 +1,3 @@
-"""
-View Results page – browse and inspect previously generated reports.
-"""
-
 import json
 import os
 import re
@@ -15,8 +11,6 @@ from gui.widgets.fairness import render_fairness_board, render_fairness_comparis
 
 
 def view_results_page():
-    """Render the *View Previous Results* page."""
-
     st.markdown("<div class='main-header'>Previous Results</div>", unsafe_allow_html=True)
 
     if st.button("\u2190 Back to Main"):
@@ -103,7 +97,7 @@ def _render_stage_content(stage_content: str):
     has_markers = (
         "[TOOL USED]" in stage_content
         or "[AGENT ANALYSIS]" in stage_content
-        or "[PROXY MODEL RESULTS]" in stage_content
+        or "[ML MODEL RESULTS]" in stage_content
     )
 
     if has_markers:
@@ -132,27 +126,27 @@ def _render_stage_content(stage_content: str):
                     fair_json_dbg = _extract_json_local(section, "[FAIRNESS COMPARISON]")
                     st.write(f"Fairness JSON extracted: {bool(fair_json_dbg)}")
 
-            # ---- Proxy / Intersectional / Mitigation / Comparison / Fairness ----
-            if "[PROXY MODEL RESULTS]" in section or "[INTERSECTIONAL PROXY RESULTS]" in section:
+            # ---- ML Model / Intersectional / Mitigation / Comparison / Fairness ----
+            if "[ML MODEL RESULTS]" in section or "[INTERSECTIONAL ML RESULTS]" in section:
 
-                if "[PROXY MODEL RESULTS]" in section:
-                    proxy_json = _extract_json_local(section, "[PROXY MODEL RESULTS]")
-                    if proxy_json:
+                if "[ML MODEL RESULTS]" in section:
+                    ml_json = _extract_json_local(section, "[ML MODEL RESULTS]")
+                    if ml_json:
                         try:
-                            proxy_data = json.loads(proxy_json)
-                            if proxy_data and isinstance(proxy_data, dict) and proxy_data.get("status") == "success":
+                            ml_data = json.loads(ml_json)
+                            if ml_data and isinstance(ml_data, dict) and ml_data.get("status") == "success":
                                 st.markdown("---")
-                                render_fairness_board(proxy_data, title="Proxy Model Fairness Analysis (Stage 4)")
+                                render_fairness_board(ml_data, title="ML Model Fairness Analysis (Stage 4)")
                         except json.JSONDecodeError as e:
-                            st.warning(f"Could not parse proxy model results (JSON error at position {e.pos})")
+                            st.warning(f"Could not parse ML model results (JSON error at position {e.pos})")
                             with st.expander("View Raw Data (for debugging)"):
                                 st.text(f"Error: {str(e)}")
-                                st.text(f"First 500 chars: {proxy_json[:500]}")
+                                st.text(f"First 500 chars: {ml_json[:500]}")
                         except Exception as e:
-                            st.warning(f"Error displaying proxy model results: {type(e).__name__}: {str(e)}")
+                            st.warning(f"Error displaying ML model results: {type(e).__name__}: {str(e)}")
 
-                if "[INTERSECTIONAL PROXY RESULTS]" in section:
-                    intersect_json = _extract_json_local(section, "[INTERSECTIONAL PROXY RESULTS]")
+                if "[INTERSECTIONAL ML RESULTS]" in section:
+                    intersect_json = _extract_json_local(section, "[INTERSECTIONAL ML RESULTS]")
                     if intersect_json:
                         try:
                             intersect_data = json.loads(intersect_json)
@@ -160,7 +154,7 @@ def _render_stage_content(stage_content: str):
                                 st.markdown("---")
                                 render_fairness_board(intersect_data, title="Intersectional Fairness Analysis (Stage 4.5)")
                         except json.JSONDecodeError as e:
-                            st.warning(f"Could not parse intersectional proxy results (JSON error at position {e.pos})")
+                            st.warning(f"Could not parse intersectional ML results (JSON error at position {e.pos})")
                             with st.expander("View Raw Data (for debugging)"):
                                 st.text(f"Error: {str(e)}")
                                 st.text(f"First 500 chars: {intersect_json[:500]}")
@@ -247,7 +241,7 @@ def _render_stage_content(stage_content: str):
                 st.markdown("**Agent Analysis:**")
                 st.markdown(parts[1].strip())
 
-            elif "[TOOL RESULT]" in section and "[PROXY MODEL RESULTS]" not in section:
+            elif "[TOOL RESULT]" in section and "[ML MODEL RESULTS]" not in section:
                 parts = section.split("[TOOL RESULT]")
                 tool_name = parts[0].strip()
                 if tool_name:
@@ -563,7 +557,6 @@ def _render_visualizations_tab(report_dir: str):
 # ======================================================================
 
 def _extract_json_local(text: str, start_marker: str):
-    """Local JSON-block extractor (same logic as original inline def)."""
     try:
         start_idx = text.find(start_marker)
         if start_idx == -1:
@@ -579,7 +572,6 @@ def _extract_json_local(text: str, start_marker: str):
 
 
 def _render_comparison_results(comp_data: dict):
-    """Render imbalance & target-distribution comparison blocks."""
     if "imbalance_metrics" in comp_data:
         st.markdown("#### Imbalance Improvement")
         imb_metrics = comp_data["imbalance_metrics"]

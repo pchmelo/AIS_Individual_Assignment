@@ -1,32 +1,20 @@
-"""
-Fairness Widgets
-
-Reusable Streamlit components for rendering fairness metric boards
-and before/after fairness comparison dashboards.
-"""
-
 import streamlit as st
 import pandas as pd
 
 
-def render_fairness_board(proxy_results: dict, title: str = "Fairness Metrics Board"):
-    """Render an interactive fairness metrics board from proxy-model results.
-    
-    Args:
-        proxy_results: Dict returned by the proxy model analysis tool.
-        title: Section title.
-    """
-    if not proxy_results or proxy_results.get("status") != "success":
+def render_fairness_board(ml_results: dict, title: str = "Fairness Metrics Board"):
+    """Render an interactive fairness metrics board from ML model results."""
+    if not ml_results or ml_results.get("status") != "success":
         return
 
     st.markdown(f"### {title}")
     st.info(
-        f"Model: {proxy_results.get('model_type')} | "
-        f"Test Size: {proxy_results.get('test_size')} | "
-        f"Accuracy: {proxy_results.get('performance', {}).get('accuracy')}"
+        f"Model: {ml_results.get('model_type')} | "
+        f"Test Size: {ml_results.get('test_size')} | "
+        f"Accuracy: {ml_results.get('performance', {}).get('accuracy')}"
     )
 
-    fairness = proxy_results.get("fairness_analysis", {})
+    fairness = ml_results.get("fairness_analysis", {})
     if not fairness:
         return
 
@@ -115,12 +103,7 @@ def render_fairness_board(proxy_results: dict, title: str = "Fairness Metrics Bo
 # ---------------------------------------------------------------------------
 
 def render_fairness_comparison_board(comparison_data: dict, method_name: str = "Mitigation Method"):
-    """Render a before/after fairness comparison dashboard.
-    
-    Args:
-        comparison_data: Dict with 'per_attribute_comparison' and 'overall_improvement'.
-        method_name: Display name for the mitigation method.
-    """
+    """Render a before/after fairness comparison dashboard."""
     if not comparison_data or comparison_data.get("status") == "error":
         st.warning(
             f"Fairness comparison not available: {comparison_data.get('message', 'Unknown error')}"

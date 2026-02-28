@@ -1,18 +1,18 @@
-"""Stage 4.5 – Target Fairness Analysis."""
-
 from __future__ import annotations
-
 import os
 from datetime import datetime
 from typing import Any, Dict, List
-
 import pandas as pd
-
 from pipeline.stages.base import BaseStageExecutor, safe_json_dumps
 
 
+
+"""
+Stage 4.5 – Target Fairness Analysis.
+Analyse fairness of the target variable across sensitive groups.
+"""
+
 class TargetFairnessStage(BaseStageExecutor):
-    """Analyse fairness of the target variable across sensitive groups."""
 
     def __call__(self, stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
         results = ctx["results"]
@@ -33,7 +33,7 @@ class TargetFairnessStage(BaseStageExecutor):
 
         selected_pairs = ctx.get("selected_pairs")
 
-        # ── Tool call ────────────────────────────────────────────────
+        # Tool call
         tool_result = ctx["fairness_tools"].analyze_target_fairness(
             dataset_name=ctx["dataset_name"],
             target_column=target_column,
@@ -42,26 +42,26 @@ class TargetFairnessStage(BaseStageExecutor):
             selected_pairs=selected_pairs,
         )
 
-        # ── Optional intersectional proxy ────────────────────────────
-        proxy_config = ctx.get("proxy_config", {})
-        intersectional_proxy = None
+        # Optional intersectional ML model
+        ml_config = ctx.get("ml_config", {})
+        intersectional_ml = None
 
         if (
-            proxy_config.get("enabled")
+            ml_config.get("enabled")
             and selected_pairs
         ):
-            intersectional_proxy = self._run_intersectional_proxy(
-                ctx, selected_pairs, target_column, proxy_config,
+            intersectional_ml = self._run_intersectional_ml(
+                ctx, selected_pairs, target_column, ml_config,
             )
 
-        # ── Agent analysis ───────────────────────────────────────────
-        proxy_context = ""
-        if intersectional_proxy and intersectional_proxy.get("status") == "success":
-            proxy_context = (
-                "INTERSECTIONAL PROXY MODEL METRICS:\n"
-                f"(Model: {intersectional_proxy.get('model_type')})\n\n"
+        # Agent analysis
+        ml_context = ""
+        if intersectional_ml and intersectional_ml.get("status") == "success":
+            ml_context = (
+                "INTERSECTIONAL ML MODEL METRICS:\n"
+                f"(Model: {intersectional_ml.get('model_type')})\n\n"
                 "Fairness Metrics for Combined Groups (Intersectional):\n"
-                f"{safe_json_dumps(intersectional_proxy.get('fairness_analysis', {}))}\n\n"
+                f"{safe_json_dumps(intersectional_ml.get('fairness_analysis', {}))}\n\n"
                 "CRITICAL ANALYSIS REQUIREMENTS:\n"
                 '1. Analyze "F1 Score" for each intersectional group. '
                 "Identify which SPECIFIC combination (e.g. Black Female) "
@@ -76,7 +76,7 @@ class TargetFairnessStage(BaseStageExecutor):
             "across sensitive attributes.\n\n"
             f"SENSITIVE COLUMNS ANALYZED: {', '.join(sensitive_cols)}\n\n"
             f"FAIRNESS METRICS DATA:\n{safe_json_dumps(tool_result)}\n"
-            f"{proxy_context}\n\n"
+            f"{ml_context}\n\n"
             "Provide analysis on:\n"
             "1. Target distribution across different demographic groups\n"
             "2. Disparate impact – which groups have significantly "
@@ -94,23 +94,20 @@ class TargetFairnessStage(BaseStageExecutor):
             tool_result,
             prompt,
             stage,
-            intersectional_proxy_results=intersectional_proxy,
+            intersectional_ml_results=intersectional_ml,
             target_column=target_column,
             analyzed_sensitive_columns=sensitive_cols,
         )
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
-    def _run_intersectional_proxy(
+    def _run_intersectional_ml(
         ctx: Dict[str, Any],
         selected_pairs: List,
         target_column: str,
-        proxy_config: Dict[str, Any],
+        ml_config: Dict[str, Any],
     ) -> Dict[str, Any] | None:
-        """Train a proxy model on combined attribute columns."""
+        """Train a ML model on combined attribute columns."""
         try:
             fairness_tools = ctx["fairness_tools"]
             path = fairness_tools._resolve_path(ctx["dataset_name"])
@@ -136,13 +133,13 @@ class TargetFairnessStage(BaseStageExecutor):
             temp_path = os.path.join(data_dir, temp_filename)
             df.to_csv(temp_path, index=False)
 
-            result = fairness_tools.train_and_evaluate_proxy_model(
+            result = fairness_tools.train_and_evaluate_ml_model(
                 dataset_name=temp_filename.replace(".csv", ""),
                 target_column=target_column,
                 sensitive_columns=temp_cols,
-                test_size=proxy_config.get("test_size", 0.25),
-                model_type=proxy_config.get("model_type", "Random Forest"),
-                model_params=proxy_config.get("model_params", {}),
+                test_size=ml_config.get("test_size", 0.25),
+                model_type=ml_config.get("model_type", "Random Forest"),
+                model_params=ml_config.get("model_params", {}),
             )
 
             if os.path.exists(temp_path):
@@ -150,5 +147,5 @@ class TargetFairnessStage(BaseStageExecutor):
 
             return result
         except Exception as exc:
-            print(f"Intersectional proxy analysis failed: {exc}")
+            print(f"Intersectional ML analysis failed: {exc}")
             return None

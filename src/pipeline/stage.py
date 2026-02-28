@@ -58,16 +58,7 @@ class Stage:
 
 
     def execute(self, pipeline_ctx: Dict[str, Any]) -> Dict[str, Any]:
-        """Run the stage and store the result.
-
-        Args:
-            pipeline_ctx: Shared mutable context dictionary managed by the
-                          pipeline.  Stages read from / write to this dict
-                          so downstream stages can access upstream results.
-
-        Returns:
-            The result dictionary produced by ``execute_fn``.
-        """
+        """Run the stage and store the result."""
         if self.execute_fn is None:
             self.status = StageStatus.SKIPPED
             self.result = {"status": "skipped", "message": f"No execution function for {self.key}"}

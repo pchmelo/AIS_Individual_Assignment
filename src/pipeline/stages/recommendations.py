@@ -1,13 +1,15 @@
-"""Stage 5 – Recommendations."""
-
 from __future__ import annotations
 from typing import Any, Dict
 
 from pipeline.stages.base import BaseStageExecutor, safe_json_dumps
 
 
+"""
+Stage 5 – Recommendations.
+Generate improvement recommendations from compiled findings.
+"""
+
 class RecommendationsStage(BaseStageExecutor):
-    """Generate improvement recommendations from compiled findings."""
 
     def __call__(self, stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
         findings = self._compile_findings(ctx["results"])
@@ -24,8 +26,6 @@ class RecommendationsStage(BaseStageExecutor):
 
         recommendations = stage.agent.run(prompt)
         return {"recommendations": recommendations}
-
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _compile_findings(stage_results: Dict[str, Any]) -> str:

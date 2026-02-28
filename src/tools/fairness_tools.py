@@ -118,10 +118,10 @@ class FairnessTools(ToolManager):
             }
         )
 
-        self.tool_proxy_model_analysis = Tool(
-            name="train_and_evaluate_proxy_model",
-            function=self.train_and_evaluate_proxy_model,
-            description="Train a proxy model to evaluate performance (F1 Score) and fairness metrics.",
+        self.tool_ml_model_analysis = Tool(
+            name="train_and_evaluate_ml_model",
+            function=self.train_and_evaluate_ml_model,
+            description="Train a ml model to evaluate performance (F1 Score) and fairness metrics.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -144,7 +144,7 @@ class FairnessTools(ToolManager):
             self.tool_analyze_sensitive,
             self.tool_check_imbalance,
             self.tool_fairness_analysis,
-            self.tool_proxy_model_analysis
+            self.tool_ml_model_analysis
         ]
         self._build_tool_mappings()
     
@@ -793,7 +793,7 @@ class FairnessTools(ToolManager):
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    def train_and_evaluate_proxy_model(self, dataset_name: str, target_column: str, 
+    def train_and_evaluate_ml_model(self, dataset_name: str, target_column: str, 
                                      sensitive_columns: list = None, test_size: float = 0.25,
                                      model_type: str = "Random Forest", model_params: dict = None) -> dict:
         try:
@@ -974,4 +974,4 @@ class FairnessTools(ToolManager):
             return result
             
         except Exception as e:
-            return {"status": "error", "message": f"Proxy model error: {str(e)}"}
+            return {"status": "error", "message": f"ML model error: {str(e)}"}

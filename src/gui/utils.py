@@ -1,9 +1,3 @@
-"""
-Utility Helpers
-
-Dataset I/O, report listing, column inspection, and report file parsing utilities.
-"""
-
 import os
 import re
 
@@ -11,9 +5,7 @@ import streamlit as st
 import pandas as pd
 
 
-# Project root (one level above src/)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# src/ directory
 SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -29,11 +21,7 @@ def get_available_reports() -> list:
     """Return list of report directory names."""
     reports_dir = os.path.join(BASE_DIR, "reports")
     if os.path.exists(reports_dir):
-        return [
-            d
-            for d in os.listdir(reports_dir)
-            if os.path.isdir(os.path.join(reports_dir, d))
-        ]
+        return [d for d in os.listdir(reports_dir) if os.path.isdir(os.path.join(reports_dir, d))]
     return []
 
 
@@ -64,11 +52,7 @@ def get_dataset_columns(dataset_name: str) -> list:
 # ---------------------------------------------------------------------------
 
 def parse_report_file(filepath: str):
-    """Parse a report text file into (header_info, stages) or None.
-    
-    Returns:
-        tuple(dict, dict) or None
-    """
+    """Parse a report text file into (header_info, stages) or None."""
     if not os.path.exists(filepath):
         return None
 

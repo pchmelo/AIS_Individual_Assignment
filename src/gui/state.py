@@ -1,9 +1,3 @@
-"""
-Session State Management
-
-Initializes and manages Streamlit session state variables used across the application.
-"""
-
 import streamlit as st
 
 from gui.config import get_default_model_name
@@ -27,7 +21,7 @@ def init_session_state():
 
         # Stage-level overrides
         "confirmed_sensitive_columns": None,
-        "proxy_config": {"enabled": False},
+        "ml_config": {"enabled": False},
 
         "evaluation_results": None,
         "selected_report": None,

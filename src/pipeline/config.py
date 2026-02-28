@@ -1,12 +1,3 @@
-"""
-Pipeline configuration – loads stage definitions from YAML.
-
-:func:`load_pipeline_config` reads ``pipeline_config.yml`` (or a custom path),
-resolves executor class names to instances from :mod:`pipeline.stages`, and
-returns a list of :class:`StageDefinition` dataclasses that the pipeline
-iterates to build concrete :class:`Stage` objects.
-"""
-
 from __future__ import annotations
 
 import os
@@ -27,7 +18,6 @@ from pipeline.stages import (
     MitigationStage,
 )
 
-# ── Executor class registry ──────────────────────────────────────────────
 
 _EXECUTOR_REGISTRY: Dict[str, Type[BaseStageExecutor]] = {
     "LoadingStage": LoadingStage,
@@ -41,12 +31,8 @@ _EXECUTOR_REGISTRY: Dict[str, Type[BaseStageExecutor]] = {
 }
 
 
-# ── Data class ───────────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class StageDefinition:
-    """Declarative description of a single pipeline stage."""
-
     key: str
     name: str
     executor: BaseStageExecutor
@@ -57,25 +43,11 @@ class StageDefinition:
     requires_target: bool = False      # only include when a target column is set
 
 
-# ── Loader ───────────────────────────────────────────────────────────────
 
 _DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "pipeline_config.yml")
 
 
 def load_pipeline_config(path: str | None = None) -> List[StageDefinition]:
-    """Load stage definitions from a YAML file.
-
-    Args:
-        path: Path to the YAML file.  Defaults to
-              ``pipeline/pipeline_config.yml`` next to this module.
-
-    Returns:
-        Ordered list of :class:`StageDefinition` instances.
-
-    Raises:
-        FileNotFoundError: If the YAML file does not exist.
-        ValueError: If an executor class name is not recognised.
-    """
     path = path or _DEFAULT_CONFIG_PATH
 
     if not os.path.exists(path):
@@ -111,5 +83,4 @@ def load_pipeline_config(path: str | None = None) -> List[StageDefinition]:
     return definitions
 
 
-# Convenience: pre-loaded default config (same as before for backwards compat)
 EVALUATION_STAGES: List[StageDefinition] = load_pipeline_config()

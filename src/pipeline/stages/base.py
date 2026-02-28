@@ -1,14 +1,3 @@
-"""
-Base stage executor and shared utilities.
-
-Every concrete stage inherits from :class:`BaseStageExecutor` and implements
-``__call__(stage, ctx) -> dict``.
-
-The helper :meth:`_tool_then_analyze` captures the most common pattern
-("call a tool, ask an agent to analyse the output"), so simple stages
-need only a few lines of code.
-"""
-
 from __future__ import annotations
 
 import json
@@ -17,8 +6,6 @@ from typing import Any, Dict
 
 import numpy as np
 
-
-# ── Serialisation helpers ────────────────────────────────────────────────
 
 
 def convert_to_serializable(obj: Any) -> Any:
@@ -48,22 +35,17 @@ def safe_json_dumps(data: Any, indent: int = 2) -> str:
         return f"Error serializing data: {exc}"
 
 
-# ── Base executor ────────────────────────────────────────────────────────
-
+# Base executor
 
 class BaseStageExecutor(ABC):
-    """Abstract base for every stage executor.
-
-    Subclasses **must** implement ``__call__(stage, ctx)``.
-    They may use the shared utility helpers defined below.
+    """
+    Abstract base for every stage executor.
     """
 
     @abstractmethod
     def __call__(self, stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
         """Run the stage logic and return a result dict."""
-        ...
-
-    # ── convenience helpers ──────────────────────────────────────────
+        pass
 
     @staticmethod
     def _append_user_context(prompt: str, user_context: str | None) -> str:

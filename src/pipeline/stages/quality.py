@@ -1,13 +1,15 @@
-"""Stage 2 – Data Quality Analysis."""
-
 from __future__ import annotations
 from typing import Any, Dict
 
 from pipeline.stages.base import BaseStageExecutor, safe_json_dumps
 
 
+"""
+Stage 2 – Data Quality Analysis.
+Analyse missing data and other quality issues.
+"""
+
 class QualityStage(BaseStageExecutor):
-    """Analyse missing data and other quality issues."""
 
     def __call__(self, stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
         tool_result = ctx["fairness_tools"].check_missing_data(ctx["dataset_name"])

@@ -1,13 +1,15 @@
-"""Stage 4 – Imbalance Analysis."""
-
 from __future__ import annotations
 from typing import Any, Dict
 
 from pipeline.stages.base import BaseStageExecutor, safe_json_dumps
 
 
+"""
+Stage 4 – Imbalance Analysis.
+Measure class imbalance for sensitive columns, with optional ml model.
+"""
+
 class ImbalanceStage(BaseStageExecutor):
-    """Measure class imbalance for sensitive columns, with optional proxy model."""
 
     def __call__(self, stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
         results = ctx["results"]
@@ -21,7 +23,7 @@ class ImbalanceStage(BaseStageExecutor):
             results.get("3_sensitive", {}).get("sensitive_columns", [])
         )
 
-        # ── Tool call ────────────────────────────────────────────────
+        # Tool call
         tool_result = ctx["fairness_tools"].check_class_imbalance(
             ctx["dataset_name"],
         )
@@ -35,34 +37,34 @@ class ImbalanceStage(BaseStageExecutor):
             tool_result["details"] = filtered
             tool_result["imbalanced_columns"] = len(filtered)
 
-        # ── Optional proxy model ─────────────────────────────────────
-        proxy_config = ctx.get("proxy_config", {})
+        # Optional ml model
+        ml_config = ctx.get("ml_config", {})
         target = ctx.get("target_column")
-        proxy_results = None
+        ml_results = None
 
         if (
-            proxy_config.get("enabled")
+            ml_config.get("enabled")
             and sensitive_cols
             and target
         ):
-            proxy_results = ctx["fairness_tools"].train_and_evaluate_proxy_model(
+            ml_results = ctx["fairness_tools"].train_and_evaluate_ml_model(
                 dataset_name=ctx["dataset_name"],
                 target_column=target,
                 sensitive_columns=sensitive_cols,
-                test_size=proxy_config.get("test_size", 0.25),
-                model_type=proxy_config.get("model_type", "Random Forest"),
-                model_params=proxy_config.get("model_params", {}),
+                test_size=ml_config.get("test_size", 0.25),
+                model_type=ml_config.get("model_type", "Random Forest"),
+                model_params=ml_config.get("model_params", {}),
             )
 
-        # ── Agent analysis ───────────────────────────────────────────
-        proxy_context = _build_proxy_context(proxy_results)
+        # Agent analysis
+        ml_context = _build_ml_context(ml_results)
 
         prompt = (
             "Analyze class imbalance in SENSITIVE/PROTECTED attributes ONLY.\n\n"
             f"SENSITIVE COLUMNS IDENTIFIED: {', '.join(sensitive_cols)}\n\n"
             "IMBALANCE DATA (for sensitive columns only):\n"
             f"{safe_json_dumps(tool_result)}\n"
-            f"{proxy_context}\n\n"
+            f"{ml_context}\n\n"
             "Provide:\n"
             "1. Summary of imbalance severity for each sensitive column\n"
             "2. Fairness risks (which groups are underrepresented?)\n"
@@ -76,35 +78,32 @@ class ImbalanceStage(BaseStageExecutor):
             tool_result,
             prompt,
             stage,
-            proxy_model_results=proxy_results,
-            baseline_fairness_metrics=proxy_results,
+            ml_model_results=ml_results,
+            baseline_fairness_metrics=ml_results,
             analyzed_columns=sensitive_cols,
         )
 
 
-# ── Module-level helper (reused by fairness.py) ─────────────────────────
-
-
-def _build_proxy_context(proxy_results: dict | None) -> str:
-    """Format proxy-model results into a prompt snippet."""
-    if not proxy_results or proxy_results.get("status") != "success":
+def _build_ml_context(ml_results: dict | None) -> str:
+    """Format ML model results into a prompt snippet."""
+    if not ml_results or ml_results.get("status") != "success":
         return ""
 
     per_label_str = ""
-    if "per_label_metrics" in proxy_results.get("performance", {}):
+    if "per_label_metrics" in ml_results.get("performance", {}):
         per_label_str = (
             "\nPer-Label Performance (F1, Precision, Recall):\n"
-            + safe_json_dumps(proxy_results["performance"]["per_label_metrics"])
+            + safe_json_dumps(ml_results["performance"]["per_label_metrics"])
         )
 
     return (
-        "PROXY MODEL FAIRNESS ANALYSIS:\n"
-        f"Model: {proxy_results.get('model_type')} "
-        f"(Acc: {proxy_results['performance']['accuracy']}, "
-        f"F1: {proxy_results['performance']['f1_macro']})\n"
+        "ML MODEL FAIRNESS ANALYSIS:\n"
+        f"Model: {ml_results.get('model_type')} "
+        f"(Acc: {ml_results['performance']['accuracy']}, "
+        f"F1: {ml_results['performance']['f1_macro']})\n"
         f"{per_label_str}\n\n"
         "Fairness Metrics per Attribute (F1 Score & Disparity):\n"
-        f"{safe_json_dumps(proxy_results.get('fairness_analysis', {}))}\n\n"
+        f"{safe_json_dumps(ml_results.get('fairness_analysis', {}))}\n\n"
         "Include these metrics (Statistical Parity, Disparate Impact, "
         "Group F1, FNR/FPR Ratios) in your assessment.\n\n"
         "CRITICAL ANALYSIS REQUIREMENTS:\n"

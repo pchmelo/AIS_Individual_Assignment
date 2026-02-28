@@ -1,15 +1,8 @@
-"""
-Configuration Helpers
-
-Functions for loading the YAML config and resolving model / API-key information.
-"""
-
 import os
 import yaml
 
 
 def get_config_path() -> str:
-    """Get absolute path to the configuration file."""
     return os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", "config.yml")
 
 
@@ -25,48 +18,20 @@ def load_config() -> dict:
 def get_available_models() -> dict:
     """Return dict of model_name -> config from config.yml."""
     cfg = load_config()
-    # New format
-    models = cfg.get("models")
-    if models:
-        return models
-    # Legacy fallback
-    clients = cfg.get("clients", {})
-    result = {}
-    for k, v in clients.items():
-        if k == "default" or not isinstance(v, dict):
-            continue
-        entry = v.copy()
-        entry.setdefault("provider", k)
-        result[k] = entry
-    return result
+    return cfg.get("models", {})
 
 
 def get_default_model_name() -> str:
     """Return the default model name from config."""
     cfg = load_config()
-    name = cfg.get("default_model")
-    if name:
-        return name
-    return cfg.get("clients", {}).get("default", "openrouter")
+    return cfg.get("default_model", "")
 
 
-def validate_api_keys(model_choice) -> tuple:
-    """Validate that necessary API keys are present for the selected model.
-    
-    Args:
-        model_choice: model name string (from config) or legacy int.
-    
-    Returns:
-        (is_valid: bool, message: str)
-    """
-    # Legacy integer support
-    if isinstance(model_choice, int):
-        legacy_map = {0: "local", 1: "openrouter", 2: "gemini"}
-        provider = legacy_map.get(model_choice, "openrouter")
-    else:
-        models = get_available_models()
-        model_cfg = models.get(model_choice, {})
-        provider = model_cfg.get("provider", model_choice)
+def validate_api_keys(model_choice: str) -> tuple:
+    """Validate that necessary API keys are present for the selected model."""
+    models = get_available_models()
+    model_cfg = models.get(model_choice, {})
+    provider = model_cfg.get("provider", model_choice)
 
     provider_lower = provider.lower()
     if provider_lower == "openrouter":
@@ -81,6 +46,6 @@ def validate_api_keys(model_choice) -> tuple:
                 f"Missing GOOGLE_API_KEY for model '{model_choice}'. "
                 "Please add it to Streamlit Secrets or .env file."
             )
+        
     # 'local' models don't need API keys
-
     return True, "OK"

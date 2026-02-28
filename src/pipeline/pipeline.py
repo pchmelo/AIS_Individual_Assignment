@@ -19,7 +19,8 @@ from pipeline.stages.base import safe_json_dumps
 
 
 class DatasetEvaluationPipeline:
-    """Pipeline for evaluating datasets for quality and fairness issues.
+    """
+    Pipeline for evaluating datasets for quality and fairness issues.
     """
     def __init__(
         self,
@@ -60,7 +61,6 @@ class DatasetEvaluationPipeline:
 
         print("Pipeline initialized")
 
-    # ---- initialisation helpers --------------------------------------
 
     def _init_from_config(self, config_path: str, default_model: str = None):
         self.agent_manager = AgentManager.from_yaml(config_path)
@@ -71,7 +71,6 @@ class DatasetEvaluationPipeline:
         print(f"Loaded configuration from: {config_path}")
 
     def _initialize_agents(self):
-        # Try to get each agent from config, fallback to defaults for missing ones
         self.file_parser_agent = self.agent_manager.get_primary_agent_for_stage("parsing")
         self.inspector_agent = self.agent_manager.get_primary_agent_for_stage("inspection")
         self.bias_mitigation_agent = self.agent_manager.get_primary_agent_for_stage("mitigation")
@@ -79,7 +78,6 @@ class DatasetEvaluationPipeline:
         self.fairness_agent = self.agent_manager.get_primary_agent_for_stage("fairness_analysis")
         self.recommendation_agent = self.agent_manager.get_primary_agent_for_stage("recommendation")
 
-        # Fill in any missing agents with defaults
         if self.file_parser_agent is None:
             self.file_parser_agent = FunctionCallerAgent(
                 tool_manager=self.fairness_tools, model_client=self.model_client,
@@ -103,9 +101,6 @@ class DatasetEvaluationPipeline:
 
         print("All agents initialized from configuration")
 
-    # ==================================================================
-    # Stage-based pipeline API
-    # ==================================================================
 
     def build_stages(
         self,
@@ -113,10 +108,8 @@ class DatasetEvaluationPipeline:
         target_column: Optional[str] = None,
         user_prompt: str = "",
     ) -> List[Stage]:
-        """Build the ordered list of stages for an evaluation run.
-
-        Uses the declarative :data:`EVALUATION_STAGES` config to produce
-        :class:`Stage` instances with the correct executor and agent.
+        """
+        Build the ordered list of stages for an evaluation run.
         """
         self.current_dataset = dataset_name
         self.target_column = target_column
@@ -144,7 +137,7 @@ class DatasetEvaluationPipeline:
             "report_dir": self.report_dir,
             "images_dir": self.images_dir,
             "confirmed_sensitive_columns": None,
-            "proxy_config": {"enabled": False},
+            "ml_config": {"enabled": False},
             "selected_pairs": None,
             "mitigation_config": None,
             # Tool managers
@@ -175,7 +168,6 @@ class DatasetEvaluationPipeline:
         self._current_stage_index = 0
         return stages
 
-    # ---- navigation --------------------------------------------------
 
     @property
     def stages(self) -> List[Stage]:
@@ -244,14 +236,14 @@ class DatasetEvaluationPipeline:
         return result
 
     # ==================================================================
-    # Legacy terminal-mode entry point
+    # Terminal-mode entry point
     # ==================================================================
 
     def evaluate_dataset(
         self,
         user_prompt: str,
         confirmed_sensitive: list = None,
-        proxy_config: dict = None,
+        ml_config: dict = None,
     ) -> Dict[str, Any]:
         """Run the full pipeline in one shot (used by terminal mode)."""
         dataset_name = self._extract_dataset_name(user_prompt)
@@ -264,8 +256,8 @@ class DatasetEvaluationPipeline:
 
         if confirmed_sensitive:
             self._pipeline_ctx["confirmed_sensitive_columns"] = confirmed_sensitive
-        if proxy_config:
-            self._pipeline_ctx["proxy_config"] = proxy_config
+        if ml_config:
+            self._pipeline_ctx["ml_config"] = ml_config
 
         print(f"\n{'=' * 80}")
         print("DATASET EVALUATION PIPELINE")
@@ -405,12 +397,12 @@ class DatasetEvaluationPipeline:
         if "tool_result" in data:
             report.append("\n[TOOL RESULT]")
             report.append(safe_json_dumps(data["tool_result"]))
-        if "proxy_model_results" in data:
-            report.append("\n\n[PROXY MODEL RESULTS]")
-            report.append(safe_json_dumps(data["proxy_model_results"]))
-        if "intersectional_proxy_results" in data:
-            report.append("\n\n[INTERSECTIONAL PROXY RESULTS]")
-            report.append(safe_json_dumps(data["intersectional_proxy_results"]))
+        if "ml_model_results" in data:
+            report.append("\n\n[ML MODEL RESULTS]")
+            report.append(safe_json_dumps(data["ml_model_results"]))
+        if "intersectional_ml_model_results" in data:
+            report.append("\n\n[INTERSECTIONAL ML MODEL RESULTS]")
+            report.append(safe_json_dumps(data["intersectional_ml_model_results"]))
         if "agent_analysis" in data:
             report.append("\n\n[AGENT ANALYSIS]")
             report.append("-" * 80)

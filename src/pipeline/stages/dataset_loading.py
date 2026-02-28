@@ -1,13 +1,15 @@
-"""Stage 0 – Dataset Loading."""
-
 from __future__ import annotations
 from typing import Any, Dict
 
 from pipeline.stages.base import BaseStageExecutor
 
 
+"""
+Stage 0 – Dataset Loading.
+Load and validate the dataset file.
+"""
+
 class LoadingStage(BaseStageExecutor):
-    """Load and validate the dataset file."""
 
     def __call__(self, stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
         tool_result = ctx["fairness_tools"].load_dataset(ctx["dataset_name"])

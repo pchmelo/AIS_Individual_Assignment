@@ -1,9 +1,3 @@
-"""
-CSS Styles
-
-All custom Streamlit CSS used by the application.
-"""
-
 import streamlit as st
 
 

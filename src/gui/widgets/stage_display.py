@@ -1,10 +1,3 @@
-"""
-Stage Display Widgets
-
-Functions for executing pipeline stages and rendering their results
-in the stepwise evaluation UI.
-"""
-
 import os
 import re
 import streamlit as st
@@ -41,7 +34,7 @@ def display_stage_results(stage_key: str, stage_result: dict):
     st.markdown(f"### {STAGE_NAMES.get(stage_key, stage_key)}")
 
     # ------------------------------------------------------------------
-    # Bias mitigation (stage 6) – special layout
+    # Bias mitigation (stage 6)
     # ------------------------------------------------------------------
     if stage_key == "6_bias_mitigation":
         _render_bias_mitigation(stage_result)
@@ -242,7 +235,6 @@ def _render_multi_method_mitigation(stage_result: dict):
         df_comparison = pd.DataFrame(comparison_data)
         st.dataframe(df_comparison, width="stretch", hide_index=True)
 
-        # Best method
         best_method = None
         best_ratio = float("inf")
         for method in applied_methods:
@@ -258,7 +250,6 @@ def _render_multi_method_mitigation(stage_result: dict):
     else:
         st.warning("No successful methods to compare.")
 
-    # Individual details
     st.markdown("---")
     st.markdown("### Individual Method Results")
 
@@ -274,7 +265,6 @@ def _render_multi_method_mitigation(stage_result: dict):
 
 
 def _render_single_method_mitigation(stage_result: dict):
-    """Render a single-method mitigation result."""
     st.success(f"{stage_result.get('method', 'Bias mitigation')} applied successfully!")
 
     mitigation_result = stage_result.get("mitigation_result", {})

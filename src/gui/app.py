@@ -1,10 +1,3 @@
-"""
-GUI Application Entry Point
-
-Streamlit page configuration, CSS injection, session-state
-initialisation, and page routing.
-"""
-
 import streamlit as st
 
 from gui.styles import inject_css
