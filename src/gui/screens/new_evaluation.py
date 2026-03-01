@@ -21,6 +21,7 @@ from gui.utils import (
     get_dataset_columns,
 )
 from gui.widgets.stage_display import display_stage_results
+from gui.pdf_generator import generate_pdf_bytes
 
 
 def new_evaluation_page():
@@ -270,7 +271,24 @@ def _render_chat_interface():
                 except Exception as e:
                     st.error(f"Report generation error: {e}")
         if results and "report_directory" in results:
-            st.markdown(f"**Report Directory:** `{results['report_directory']}`")
+            report_dir = results["report_directory"]
+            st.markdown(f"**Report Directory:** `{report_dir}`")
+            
+            # PDF Download button - use evaluation_report.txt for better formatting
+            report_path = os.path.join(report_dir, "evaluation_report.txt")
+            if os.path.exists(report_path):
+                try:
+                    pdf_bytes = generate_pdf_bytes(report_path)
+                    dataset_name = os.path.basename(report_dir).split("_")[0]
+                    st.download_button(
+                        label="📄 Download PDF Report",
+                        data=pdf_bytes,
+                        file_name=f"{dataset_name}_fairness_report.pdf",
+                        mime="application/pdf",
+                        key="download_pdf_new_eval",
+                    )
+                except Exception as e:
+                    st.warning(f"Could not generate PDF: {e}")
 
     # ---- Input area ----
     st.markdown("---")
@@ -285,8 +303,14 @@ def _render_input_area(pipeline):
         st.caption(f"Next stage: **{cur.name}** -- {cur.description}")
     elif pipeline.is_finished:
         st.caption(
-            "Pipeline finished. You can **Repeat** or **Backward** to revisit stages."
+            "Pipeline finished. You can **Repeat** a stage or **Backward** to revisit."
         )
+
+    # Determine available actions based on pipeline state
+    if pipeline.is_finished:
+        action_options = ["Backward", "Repeat"]
+    else:
+        action_options = ["Forward", "Backward", "Repeat"]
 
     with st.form("chat_input_form", clear_on_submit=True):
         col_input, col_action, col_send = st.columns([6, 2, 1])
@@ -301,7 +325,7 @@ def _render_input_area(pipeline):
         with col_action:
             action_choice = st.selectbox(
                 "Action",
-                options=["Forward", "Backward", "Repeat"],
+                options=action_options,
                 index=0,
                 label_visibility="collapsed",
             )
@@ -435,16 +459,22 @@ def _apply_user_text_overrides(pipeline, stage, user_text):
             st.session_state.confirmed_sensitive_columns = cols
 
     # Stage 4.5 -- user can specify pairs like "Sex+Race, Age+Education"
+    # Or type "none"/"skip" to skip the intersectional analysis
     if stage.key == "4_5_target_fairness":
-        pairs = []
-        for part in text.split(","):
-            part = part.strip()
-            if "+" in part:
-                tokens = [t.strip() for t in part.split("+")]
-                if len(tokens) == 2:
-                    pairs.append(tuple(tokens))
-        if pairs:
-            pipeline.pipeline_ctx["selected_pairs"] = pairs
+        text_lower = text.strip().lower()
+        if text_lower in ("none", "skip", "no", "n"):
+            # User explicitly wants to skip pair analysis
+            pipeline.pipeline_ctx["selected_pairs"] = []
+        else:
+            pairs = []
+            for part in text.split(","):
+                part = part.strip()
+                if "+" in part:
+                    tokens = [t.strip() for t in part.split("+")]
+                    if len(tokens) == 2:
+                        pairs.append(tuple(tokens))
+            if pairs:
+                pipeline.pipeline_ctx["selected_pairs"] = pairs
 
     # Stage 6 -- user names mitigation methods
     if stage.key == "6_bias_mitigation":
@@ -482,9 +512,9 @@ def _get_confirmation_hint(stage, pipeline):
         if sens:
             return (
                 f"**Stage 3 detected these sensitive columns:** {', '.join(sens)}\n\n"
-                "Before proceeding with the imbalance analysis you can:\n"
-                "- Type column names to override (comma-separated)\n"
-                "- Or just press **Forward** to accept and continue."
+                "These columns will be used for imbalance and fairness analysis.\n\n"
+                "- **Override:** Type different column names (comma-separated) to replace the detected columns\n"
+                "- **Accept:** Press **Forward** to continue with the detected columns"
             )
 
     if stage.key == "4_5_target_fairness":
@@ -499,8 +529,9 @@ def _get_confirmation_hint(stage, pipeline):
             return (
                 f"**Target Fairness Analysis** can examine these attribute pairs:\n"
                 f"{pairs_str}\n\n"
-                "Type the pairs you want (e.g. `Sex+Race, Age+Education`) "
-                "or press **Forward** to analyse all."
+                "- Type the pairs you want (e.g. `Sex+Race, Age+Education`)\n"
+                "- Type `none` to skip intersectional analysis\n"
+                "- Or press **Forward** to analyse all pairs."
             )
 
     if stage.key == "6_bias_mitigation":

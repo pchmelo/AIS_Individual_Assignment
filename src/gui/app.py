@@ -2,9 +2,9 @@ import streamlit as st
 
 from gui.styles import inject_css
 from gui.state import init_session_state
-from gui.pages.main_page import main_page
-from gui.pages.new_evaluation import new_evaluation_page
-from gui.pages.view_results import view_results_page
+from gui.screens.main_page import main_page
+from gui.screens.new_evaluation import new_evaluation_page
+from gui.screens.view_results import view_results_page
 
 
 def main():

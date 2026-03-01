@@ -627,8 +627,14 @@ class FairnessTools(ToolManager):
                     }
                 result["target_rates_by_group"][sensitive_col] = group_target_rates
             
-            if len(sensitive_columns) >= 2:                
-                if selected_pairs:
+            if len(sensitive_columns) >= 2:
+                # selected_pairs=None means use all pairs
+                # selected_pairs=[] means user skipped pair analysis
+                # selected_pairs=[...] means use only those pairs
+                if selected_pairs is not None and len(selected_pairs) == 0:
+                    print("User skipped intersectional pair analysis")
+                    sensitive_pairs = []
+                elif selected_pairs:
                     sensitive_pairs = [
                         (col1, col2) for col1, col2 in selected_pairs 
                         if col1 in df.columns and col2 in df.columns

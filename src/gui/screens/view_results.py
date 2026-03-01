@@ -8,6 +8,8 @@ import streamlit as st
 
 from gui.utils import BASE_DIR, get_available_reports, parse_report_file
 from gui.widgets.fairness import render_fairness_board, render_fairness_comparison_board
+from gui.widgets.stage_display import _clean_agent_analysis
+from gui.pdf_generator import generate_pdf_bytes
 
 
 def view_results_page():
@@ -32,6 +34,23 @@ def view_results_page():
     report_dir = os.path.join(BASE_DIR, "reports", selected_report)
     report_file = os.path.join(report_dir, "evaluation_report.txt")
     summary_file = os.path.join(report_dir, "agent_summary.txt")
+
+    # PDF Download button - use evaluation_report.txt for better formatting
+    if os.path.exists(report_file):
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            try:
+                pdf_bytes = generate_pdf_bytes(report_file)
+                dataset_name = selected_report.split("_")[0]
+                st.download_button(
+                    label="📄 Download PDF",
+                    data=pdf_bytes,
+                    file_name=f"{dataset_name}_fairness_report.pdf",
+                    mime="application/pdf",
+                    key="download_pdf_view_results",
+                )
+            except Exception as e:
+                st.warning(f"PDF: {e}")
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs(
         ["Full Report", "Agent Summary", "Recommendations", "Bias Mitigation", "Visualizations"]
@@ -234,12 +253,12 @@ def _render_stage_content(stage_content: str):
                         st.code(tool_result, language="json")
                 if agent_analysis:
                     st.markdown("**Agent Analysis:**")
-                    st.markdown(agent_analysis)
+                    st.markdown(_clean_agent_analysis(agent_analysis))
 
             elif "[AGENT ANALYSIS]" in section:
                 parts = section.split("[AGENT ANALYSIS]")
                 st.markdown("**Agent Analysis:**")
-                st.markdown(parts[1].strip())
+                st.markdown(_clean_agent_analysis(parts[1].strip()))
 
             elif "[TOOL RESULT]" in section and "[ML MODEL RESULTS]" not in section:
                 parts = section.split("[TOOL RESULT]")

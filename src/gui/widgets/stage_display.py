@@ -12,6 +12,23 @@ from gui.widgets.results import (
 from gui.widgets.fairness import render_fairness_comparison_board
 
 
+def _clean_agent_analysis(text: str) -> str:
+    """Remove tool_call artifacts and other LLM formatting noise from agent output."""
+    if not text:
+        return ""
+    # Remove <tool_call>...</tool_call> blocks (including malformed ones)
+    text = re.sub(r'<tool_call>.*?</tool_call>', '', text, flags=re.DOTALL)
+    # Remove standalone <tool_call> or </tool_call> tags
+    text = re.sub(r'</?tool_call>', '', text)
+    # Remove <function=...>...</function> blocks
+    text = re.sub(r'<function=[^>]*>.*?</function>', '', text, flags=re.DOTALL)
+    # Remove <parameter=...>...</parameter> blocks
+    text = re.sub(r'<parameter=[^>]*>.*?</parameter>', '', text, flags=re.DOTALL)
+    # Clean up excessive whitespace
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
 # ---------------------------------------------------------------------------
 # Stage result renderer
 # ---------------------------------------------------------------------------
@@ -85,7 +102,7 @@ def display_stage_results(stage_key: str, stage_result: dict):
     # Agent analysis
     # ------------------------------------------------------------------
     if "agent_analysis" in stage_result:
-        analysis_text = stage_result["agent_analysis"]
+        analysis_text = _clean_agent_analysis(stage_result["agent_analysis"])
 
         if analysis_text and str(analysis_text).strip():
             if stage_key == "3_sensitive":
@@ -278,7 +295,7 @@ def _render_single_method_mitigation(stage_result: dict):
         st.markdown("---")
         st.markdown("#### Agent Analysis")
         with st.expander("View Detailed Analysis", expanded=True):
-            st.markdown(comparison_result["agent_analysis"])
+            st.markdown(_clean_agent_analysis(comparison_result["agent_analysis"]))
 
     _render_download_button(mitigation_result, key_prefix="download_mitigated")
 
@@ -307,7 +324,7 @@ def _render_method_detail(method: str, method_result: dict):
     if comparison_result.get("agent_analysis"):
         st.markdown("---")
         st.markdown("#### Agent Analysis")
-        st.markdown(comparison_result["agent_analysis"])
+        st.markdown(_clean_agent_analysis(comparison_result["agent_analysis"]))
 
     _render_download_button(mitigation_result, key_prefix=f"download_{method.replace(' ', '_')}")
 
@@ -394,11 +411,14 @@ def _render_download_button(mitigation_result: dict, key_prefix: str = "download
     output_file = mitigation_result.get("output_file", "")
     if output_file and os.path.exists(output_file):
         st.markdown("---")
+        # Use hash of output file path to ensure unique key
+        file_hash = hash(output_file) % 10**8
+        unique_key = f"{key_prefix}_{file_hash}"
         with open(output_file, "rb") as f:
             st.download_button(
                 label="Download Mitigated Dataset",
                 data=f,
                 file_name=os.path.basename(output_file),
                 mime="text/csv",
-                key=key_prefix,
+                key=unique_key,
             )
