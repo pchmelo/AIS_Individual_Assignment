@@ -21,6 +21,9 @@ class ToolManager:
         return json.dumps(self.tool_descriptions)
     
     def parse_function_call(self, model_output: str):
+        if model_output is None:
+            return None, None
+        
         tool_match = re.search(r"<functioncall>\s*({.*?})\s*(?:\n|$)", model_output, re.DOTALL)
         
         if tool_match:

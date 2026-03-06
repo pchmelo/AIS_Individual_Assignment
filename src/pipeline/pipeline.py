@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import hashlib
 import os
 import re
@@ -16,6 +17,8 @@ from tools.bias_mitigation_tools import BiasMitigationTools
 from pipeline.stage import Stage, NavigationAction
 from pipeline.config import EVALUATION_STAGES, load_pipeline_config
 from pipeline.stages.base import safe_json_dumps
+
+from gui.pdf_generator import generate_pdf_bytes
 
 
 class DatasetEvaluationPipeline:
@@ -320,134 +323,221 @@ class DatasetEvaluationPipeline:
     # ==================================================================
 
     def generate_report(self, output_path: str = None) -> str:
-        if output_path is None:
-            output_path = os.path.join(self.report_dir, "evaluation_report.txt")
+        """Generate both markdown report and JSON data file."""        
+        md_path = os.path.join(self.report_dir, "evaluation_report.md")
+        json_path = os.path.join(self.report_dir, "stage_data.json")
+        
+        md_content = self._generate_markdown_report()
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(md_content)
+        print(f"Markdown report saved: {md_path}")
+        
+        json_content = self._generate_json_data()
+        with open(json_path, "w", encoding="utf-8") as f:
+            f.write(safe_json_dumps(json_content))
+        print(f"JSON data saved: {json_path}")
+        
+        self._save_fairness_comparison_files()
+        
+        # Create a backup copy of the report in the same folder
+        backup_path = os.path.join(self.report_dir, "evaluation_report_backup.md")
+        shutil.copy2(md_path, backup_path)
+        print(f"Report backup saved: {backup_path}")
+        
+        # Generate and save PDF copy in the root reports folder
+        try:
+            root_reports_dir = os.path.dirname(self.report_dir)
+            pdf_path = os.path.join(root_reports_dir, f"{self.current_dataset}_latest_report.pdf")
+            pdf_bytes = generate_pdf_bytes(md_path)
+            with open(pdf_path, "wb") as f:
+                f.write(pdf_bytes)
+            print(f"Latest PDF report saved: {pdf_path}")
+        except Exception as e:
+            print(f"Warning: Could not generate PDF copy: {e}")
+        
+        return md_content
 
+    def _generate_markdown_report(self) -> str:
+        """Generate pure markdown report (human-readable, easy PDF conversion)."""
         dataset_hash = hashlib.md5(self.current_dataset.encode()).hexdigest()[:8]
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        report: List[str] = []
-        report.append("=" * 80)
-        report.append("DATASET QUALITY AND FAIRNESS EVALUATION REPORT")
-        report.append("=" * 80)
-        report.append(f"\nDataset: {self.current_dataset}")
-        report.append(f"Timestamp: {ts}")
-        report.append(f"Dataset Hash: {dataset_hash}")
-        report.append(f"Report Directory: {self.report_dir}")
+        
+        lines: List[str] = []
+        lines.append("# Dataset Fairness Evaluation Report")
+        lines.append("")
+        lines.append("## Metadata")
+        lines.append("")
+        lines.append(f"- **Dataset:** {self.current_dataset}")
+        lines.append(f"- **Timestamp:** {ts}")
+        lines.append(f"- **Dataset Hash:** {dataset_hash}")
         if hasattr(self, "target_column") and self.target_column:
-            report.append(f"Target Column: {self.target_column}")
-        report.append(f"User Objective: {self.user_objective or 'Dataset auditing'}")
-        report.append("\n" + "=" * 80)
-
+            lines.append(f"- **Target Column:** {self.target_column}")
+        lines.append(f"- **Objective:** {self.user_objective or 'Dataset auditing'}")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        
         stage_titles = {
-            "0_loading": "STAGE 0: DATASET LOADING",
-            "1_objective": "STAGE 1: OBJECTIVE INSPECTION",
-            "2_quality": "STAGE 2: DATA QUALITY ANALYSIS",
-            "3_sensitive": "STAGE 3: SENSITIVE ATTRIBUTE DETECTION",
-            "4_imbalance": "STAGE 4: IMBALANCE ANALYSIS",
-            "4_5_target_fairness": "STAGE 4.5: TARGET FAIRNESS ANALYSIS",
-            "5_recommendations": "STAGE 5: RECOMMENDATIONS",
-            "6_bias_mitigation": "STAGE 6: BIAS MITIGATION",
+            "0_loading": "Stage 0: Dataset Loading",
+            "1_objective": "Stage 1: Objective Inspection",
+            "2_quality": "Stage 2: Data Quality Analysis",
+            "3_sensitive": "Stage 3: Sensitive Attribute Detection",
+            "4_imbalance": "Stage 4: Imbalance Analysis",
+            "4_5_target_fairness": "Stage 4.5: Target Fairness Analysis",
+            "5_recommendations": "Stage 5: Recommendations",
+            "6_bias_mitigation": "Stage 6: Bias Mitigation",
         }
-
-        for stage_name, stage_data in self.evaluation_results["stages"].items():
-            title = stage_titles.get(stage_name, stage_name.upper())
-            report.append(f"\n\n{title}")
-            report.append("-" * 80)
-
+        
+        for stage_key, stage_data in self.evaluation_results["stages"].items():
+            title = stage_titles.get(stage_key, stage_key.replace("_", " ").title())
+            lines.append(f"## {title}")
+            lines.append("")
+            
             if not isinstance(stage_data, dict):
-                report.append(safe_json_dumps(stage_data))
+                lines.append(str(stage_data))
+                lines.append("")
+                lines.append("---")
+                lines.append("")
                 continue
-
-            if stage_name == "6_bias_mitigation" and "methods" in stage_data:
-                self._format_mitigation_report(report, stage_data)
-            elif "tool_used" in stage_data:
-                self._format_tool_stage_report(report, stage_data)
+            
+            if "tool_used" in stage_data:
+                lines.append(f"**Tool Used:** `{stage_data['tool_used']}`")
+                lines.append("")
+            
+            if stage_key == "6_bias_mitigation" and "methods" in stage_data:
+                self._format_mitigation_markdown(lines, stage_data)
             elif "agent_analysis" in stage_data:
-                report.append("\n\n[AGENT ANALYSIS]")
-                report.append("-" * 80)
-                report.append(stage_data["agent_analysis"])
+                lines.append("### Analysis")
+                lines.append("")
+                lines.append(stage_data["agent_analysis"])
+                lines.append("")
             elif "recommendations" in stage_data:
-                report.append("\n\n[RECOMMENDATIONS]")
-                report.append("-" * 80)
-                report.append(stage_data["recommendations"])
+                lines.append("### Recommendations")
+                lines.append("")
+                lines.append(stage_data["recommendations"])
+                lines.append("")
+            elif "agent_response" in stage_data:
+                lines.append("### Response")
+                lines.append("")
+                lines.append(str(stage_data["agent_response"]))
+                lines.append("")
             else:
-                report.append(safe_json_dumps(stage_data))
+                if "objective" in stage_data:
+                    lines.append(f"**Objective:** {stage_data.get('objective', 'N/A')}")
+                    lines.append("")
+                if "validation" in stage_data:
+                    lines.append(f"**Validation:** {stage_data.get('validation', 'N/A')}")
+                    lines.append("")
+            
+            lines.append("---")
+            lines.append("")
+        
+        lines.append("*Report generated by Dataset Fairness Evaluation System*")
+        return "\n".join(lines)
 
-        report.append("\n\n" + "=" * 80)
-        report.append("END OF REPORT")
-        report.append("=" * 80)
-
-        report_text = "\n".join(report)
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(report_text)
-        print(f"Report saved: {output_path}")
-
-        summary_path = os.path.join(self.report_dir, "agent_summary.txt")
-        self._generate_agent_summary_report(summary_path)
-
-        return report_text
-
-    # ---- report formatting helpers -----------------------------------
-
-    @staticmethod
-    def _format_tool_stage_report(report: List[str], data: Dict[str, Any]):
-        report.append(f"\n[TOOL USED]: {data['tool_used']}")
-        report.append("")
-        if "tool_result" in data:
-            report.append("\n[TOOL RESULT]")
-            report.append(safe_json_dumps(data["tool_result"]))
-        if "ml_model_results" in data:
-            report.append("\n\n[ML MODEL RESULTS]")
-            report.append(safe_json_dumps(data["ml_model_results"]))
-        if "intersectional_ml_model_results" in data:
-            report.append("\n\n[INTERSECTIONAL ML MODEL RESULTS]")
-            report.append(safe_json_dumps(data["intersectional_ml_model_results"]))
-        if "agent_analysis" in data:
-            report.append("\n\n[AGENT ANALYSIS]")
-            report.append("-" * 80)
-            report.append(data["agent_analysis"])
-        elif "agent_response" in data:
-            report.append("\n\n[AGENT RESPONSE]")
-            report.append("-" * 80)
-            report.append(str(data["agent_response"]))
-        if "recommendations" in data:
-            report.append("\n\n[RECOMMENDATIONS]")
-            report.append("-" * 80)
-            report.append(data["recommendations"])
-
-    def _format_mitigation_report(self, report: List[str], stage_data: Dict[str, Any]):
-        methods_results = stage_data["methods"]
+    def _format_mitigation_markdown(self, lines: List[str], stage_data: Dict[str, Any]):
+        """Format bias mitigation section as markdown."""
+        methods_results = stage_data.get("methods", {})
         applied = stage_data.get("applied_methods", list(methods_results.keys()))
-
-        report.append(f"\nStatus: {stage_data.get('status', 'unknown')}")
-        report.append(f"Applied Methods: {', '.join(applied)}")
-        report.append("")
-
+        
+        lines.append(f"**Status:** {stage_data.get('status', 'unknown')}")
+        lines.append(f"**Applied Methods:** {', '.join(applied)}")
+        lines.append("")
+        
         for method in applied:
             mr = methods_results.get(method, {})
-            report.append(f"\n[{method.upper()}]")
-            report.append("-" * 40)
-
+            lines.append(f"### {method.replace('_', ' ').title()}")
+            lines.append("")
+            
             if mr.get("status") == "error":
-                report.append(f"Error: {mr.get('error', 'Unknown error')}")
+                lines.append(f"**Error:** {mr.get('error', 'Unknown error')}")
+                lines.append("")
                 continue
-
+            
             mitigation_result = mr.get("mitigation_result", {})
             if mitigation_result:
-                report.append("\n[MITIGATION RESULTS]")
-                report.append(safe_json_dumps(mitigation_result))
-
+                lines.append("#### Mitigation Results")
+                lines.append("")
+                if "method" in mitigation_result:
+                    lines.append(f"- **Technique:** {mitigation_result['method']}")
+                if "original_rows" in mitigation_result and "new_rows" in mitigation_result:
+                    orig = mitigation_result["original_rows"]
+                    new = mitigation_result["new_rows"]
+                    change = new - orig
+                    pct = (change / orig * 100) if orig > 0 else 0
+                    lines.append(f"- **Dataset Size:** {orig:,} → {new:,} ({pct:+.1f}%)")
+                if "rows_added" in mitigation_result:
+                    lines.append(f"- **Samples Added:** +{mitigation_result['rows_added']:,}")
+                lines.append("")
+            
             comparison_result = mr.get("comparison_result") or mitigation_result.get("comparison_result")
             if comparison_result:
-                report.append("\n[COMPARISON RESULTS]")
-                filtered = {k: v for k, v in comparison_result.items() if k != "agent_analysis"}
-                report.append(safe_json_dumps(filtered))
+                imb = comparison_result.get("imbalance_metrics", {})
+                if imb:
+                    lines.append("#### Imbalance Improvement")
+                    lines.append("")
+                    lines.append(f"- **Original Ratio:** {imb.get('original_imbalance_ratio', 'N/A'):.2f}")
+                    lines.append(f"- **Mitigated Ratio:** {imb.get('mitigated_imbalance_ratio', 'N/A'):.2f}")
+                    improvement = imb.get("improvement", "No")
+                    lines.append(f"- **Improved:** {improvement}")
+                    lines.append("")
+                
+                if "agent_analysis" in comparison_result:
+                    lines.append("#### Agent Analysis")
+                    lines.append("")
+                    lines.append(comparison_result["agent_analysis"])
+                    lines.append("")
 
+    def _generate_json_data(self) -> Dict[str, Any]:
+        """Generate JSON file with all tool results organized by stage."""
+        dataset_hash = hashlib.md5(self.current_dataset.encode()).hexdigest()[:8]
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        json_data = {
+            "metadata": {
+                "dataset": self.current_dataset,
+                "timestamp": ts,
+                "dataset_hash": dataset_hash,
+                "target_column": getattr(self, "target_column", None),
+                "objective": self.user_objective or "Dataset auditing",
+                "report_directory": self.report_dir,
+            },
+            "stages": {}
+        }
+        
+        for stage_key, stage_data in self.evaluation_results["stages"].items():
+            stage_json = {}
+            
+            if isinstance(stage_data, dict):
+                if "tool_used" in stage_data:
+                    stage_json["tool_used"] = stage_data["tool_used"]
+                if "tool_result" in stage_data:
+                    stage_json["tool_result"] = stage_data["tool_result"]
+                if "ml_model_results" in stage_data:
+                    stage_json["ml_model_results"] = stage_data["ml_model_results"]
+                if "intersectional_ml_model_results" in stage_data:
+                    stage_json["intersectional_ml_model_results"] = stage_data["intersectional_ml_model_results"]
+                if "methods" in stage_data:
+                    stage_json["methods"] = stage_data["methods"]
+                    stage_json["applied_methods"] = stage_data.get("applied_methods", [])
+                    stage_json["status"] = stage_data.get("status", "unknown")
+            else:
+                stage_json["data"] = stage_data
+            
+            json_data["stages"][stage_key] = stage_json
+        
+        return json_data
+
+    def _save_fairness_comparison_files(self):
+        """Save individual fairness comparison JSON files for each method."""
+        stage_data = self.evaluation_results["stages"].get("6_bias_mitigation", {})
+        methods_results = stage_data.get("methods", {})
+        
+        for method, mr in methods_results.items():
+            mitigation_result = mr.get("mitigation_result", {})
             fairness_comparison = mr.get("fairness_comparison") or mitigation_result.get("fairness_comparison")
+            
             if fairness_comparison and fairness_comparison.get("status") != "error":
-                report.append("\n\n[FAIRNESS COMPARISON]")
-                report.append(safe_json_dumps(fairness_comparison))
                 try:
                     fn = f"fairness_comparison_{method.lower().replace(' ', '_')}.json"
                     fp = os.path.join(self.report_dir, fn)
@@ -455,60 +545,5 @@ class DatasetEvaluationPipeline:
                         f.write(safe_json_dumps(fairness_comparison))
                 except Exception as exc:
                     print(f"Warning: Could not save fairness comparison JSON: {exc}")
-
-            if comparison_result and "agent_analysis" in comparison_result:
-                report.append("\n[AGENT ANALYSIS]")
-                report.append(comparison_result["agent_analysis"])
-            report.append("")
-
-    def _generate_agent_summary_report(self, output_path: str):
-        dataset_hash = hashlib.md5(self.current_dataset.encode()).hexdigest()[:8]
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        report: List[str] = []
-        report.append("=" * 80)
-        report.append("DATASET EVALUATION - AGENT SUMMARY")
-        report.append("=" * 80)
-        report.append(f"\nDataset: {self.current_dataset}")
-        report.append(f"Timestamp: {ts}")
-        report.append(f"Dataset Hash: {dataset_hash}")
-        report.append(f"Report Directory: {self.report_dir}")
-        if hasattr(self, "target_column") and self.target_column:
-            report.append(f"Target Column: {self.target_column}")
-        report.append(f"User Objective: {self.user_objective or 'Dataset auditing'}")
-        report.append("\n" + "=" * 80)
-
-        titles = {
-            "0_loading": "STAGE 0: DATASET LOADING",
-            "1_objective": "STAGE 1: OBJECTIVE INSPECTION",
-            "2_quality": "STAGE 2: DATA QUALITY ANALYSIS",
-            "3_sensitive": "STAGE 3: SENSITIVE ATTRIBUTE DETECTION",
-            "4_imbalance": "STAGE 4: IMBALANCE ANALYSIS",
-            "4_5_target_fairness": "STAGE 4.5: TARGET FAIRNESS ANALYSIS",
-            "5_recommendations": "STAGE 5: RECOMMENDATIONS",
-            "6_bias_mitigation": "STAGE 6: BIAS MITIGATION",
-        }
-
-        for stage_name, stage_data in self.evaluation_results["stages"].items():
-            title = titles.get(stage_name, stage_name.upper())
-            report.append(f"\n\n{title}")
-            report.append("-" * 80)
-            if isinstance(stage_data, dict):
-                if "agent_analysis" in stage_data:
-                    report.append(f"\n{stage_data['agent_analysis']}")
-                elif "recommendations" in stage_data:
-                    report.append(f"\n{stage_data['recommendations']}")
-                else:
-                    report.append(f"\n{safe_json_dumps(stage_data)}")
-            else:
-                report.append(f"\n{safe_json_dumps(stage_data)}")
-
-        report.append("\n\n" + "=" * 80)
-        report.append("END OF SUMMARY")
-        report.append("=" * 80)
-
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(report))
-        print(f"Agent summary saved: {output_path}")
 
 

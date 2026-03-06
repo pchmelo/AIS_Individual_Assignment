@@ -32,10 +32,10 @@ def view_results_page():
         return
 
     report_dir = os.path.join(BASE_DIR, "reports", selected_report)
-    report_file = os.path.join(report_dir, "evaluation_report.txt")
-    summary_file = os.path.join(report_dir, "agent_summary.txt")
+    report_file = os.path.join(report_dir, "evaluation_report.md")
+    json_data_file = os.path.join(report_dir, "stage_data.json")
 
-    # PDF Download button - use evaluation_report.txt for better formatting
+    # PDF Download button - use evaluation_report.md for markdown formatting
     if os.path.exists(report_file):
         col1, col2 = st.columns([3, 1])
         with col2:
@@ -53,14 +53,14 @@ def view_results_page():
                 st.warning(f"PDF: {e}")
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        ["Full Report", "Agent Summary", "Recommendations", "Bias Mitigation", "Visualizations"]
+        ["Full Report", "Stage Data", "Recommendations", "Bias Mitigation", "Visualizations"]
     )
 
     with tab1:
         _display_parsed_report(report_file, "Full Report")
 
     with tab2:
-        _display_parsed_report(summary_file, "Agent Summary")
+        _display_json_data(json_data_file, "Stage Data")
 
     with tab3:
         _render_recommendations_tab(report_file)
@@ -108,6 +108,53 @@ def _display_parsed_report(filepath: str, report_type: str = "Full Report"):
                 _render_stage_content(stage_content)
     else:
         st.warning("No stages found in report")
+
+
+def _display_json_data(filepath: str, report_type: str = "Stage Data"):
+    """Display stage data from JSON file with structured view."""
+    if not os.path.exists(filepath):
+        st.warning(f"{report_type} file not found")
+        return
+
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        st.error(f"Error parsing JSON: {e}")
+        return
+
+    # Display metadata
+    if "metadata" in data:
+        meta = data["metadata"]
+        with st.container():
+            st.markdown("### Evaluation Metadata")
+            cols = st.columns(3)
+            if "dataset" in meta:
+                cols[0].metric("Dataset", meta["dataset"])
+            if "timestamp" in meta:
+                cols[1].metric("Timestamp", meta["timestamp"])
+            if "target_column" in meta:
+                cols[2].metric("Target Column", meta["target_column"])
+        st.markdown("---")
+
+    # Display stages
+    if "stages" in data:
+        st.markdown("### Stage Tool Results")
+        for stage_name, stage_data in data["stages"].items():
+            with st.expander(stage_name, expanded=False):
+                if isinstance(stage_data, dict):
+                    if "tool_used" in stage_data:
+                        st.markdown(f"**Tool:** `{stage_data['tool_used']}`")
+                    if "tool_result" in stage_data:
+                        result = stage_data["tool_result"]
+                        if isinstance(result, dict):
+                            st.json(result)
+                        else:
+                            st.write(result)
+                else:
+                    st.json(stage_data)
+    else:
+        st.warning("No stage data found in JSON file")
 
 
 def _render_stage_content(stage_content: str):
@@ -293,21 +340,23 @@ def _render_recommendations_tab(report_file: str):
     rec_start = -1
     rec_end = -1
 
-    if "[RECOMMENDATIONS]" in content:
-        rec_start = content.find("[RECOMMENDATIONS]")
+    # Try multiple patterns for finding recommendations section
+    patterns = [
+        "## Stage 5: Recommendations",
+        "[RECOMMENDATIONS]",
+        "5_RECOMMENDATIONS",
+    ]
+    
+    for pattern in patterns:
+        if pattern in content:
+            rec_start = content.find(pattern)
+            break
+    
+    if rec_start >= 0:
         temp = content[rec_start:]
         next_markers = [
-            temp.find("\n\n6_BIAS_MITIGATION"),
-            temp.find("\n\nSTAGE 6:"),
-            temp.find("\n\n================================================================================\nEND OF REPORT"),
-        ]
-        next_markers = [m for m in next_markers if m > 0]
-        if next_markers:
-            rec_end = rec_start + min(next_markers)
-    elif "5_RECOMMENDATIONS" in content:
-        rec_start = content.find("5_RECOMMENDATIONS")
-        temp = content[rec_start:]
-        next_markers = [
+            temp.find("\n## Stage 6:"),
+            temp.find("\n\n---\n\n## Stage 6"),
             temp.find("\n\n6_BIAS_MITIGATION"),
             temp.find("\n\nSTAGE 6:"),
             temp.find("\n\n================================================================================\nEND OF REPORT"),

@@ -19,15 +19,36 @@ class DataAnalystAgent(BaseAgent):
                     - Highlight potential issues (missing data, imbalances, biases)
                     - Provide recommendations
                     - Use precise numbers from tool outputs
+
+                    OUTPUT FORMATTING RULES (MUST FOLLOW):
+                    - Use ## for main section headers (e.g., ## Summary)
+                    - Use ### for subsection headers (e.g., ### Key Findings)
+                    - Use numbered lists (1. 2. 3.) for ordered items
+                    - Use bullet points (- item) for unordered lists
+                    - For sensitive attribute tables, use this EXACT format:
+                      1. Column: ColumnName | Reason: Description | Values: [val1, val2, val3]
+                      (NO bold markers ** around Column:)
+                    - Avoid using ** bold markers ** in headers - just use the markdown header syntax
+                    - Keep text clean without excessive formatting
+                    - DO NOT use emojis, icons, or special symbols (no ✓, ✗, ■, ●, etc.)
                 """
     
-    def run(self, user_message: str) -> str:
+    def run(self, user_message: str, max_retries: int = 3) -> str:
         messages = [
             {"role": "system", "content": self.get_system_prompt()},
             {"role": "user", "content": user_message}
         ]
         
-        model_reply = self.ask_model(messages, max_tokens=4096)
+        # Retry logic for model failures
+        model_reply = None
+        for attempt in range(max_retries):
+            model_reply = self.ask_model(messages, max_tokens=4096)
+            if model_reply is not None:
+                break
+            print(f"Model attempt {attempt + 1}/{max_retries} failed, retrying...")
+        
+        if model_reply is None:
+            return "Error: Model returned no response after multiple attempts. Please check your API connection and try again."
         
         try:
             tool_name, args = self.tool_manager.parse_function_call(model_reply)

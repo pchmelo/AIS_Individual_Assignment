@@ -111,9 +111,14 @@ def new_evaluation_page():
                 if st.button("Start Evaluation", width="stretch", type="primary"):
                     _initialize_pipeline()
             else:
-                if st.button("Reset Pipeline", width="stretch"):
-                    _reset_state()
-                    st.rerun()
+                col_reset, col_stop = st.columns(2)
+                with col_reset:
+                    if st.button("Reset Pipeline", width="stretch"):
+                        _reset_state()
+                        st.rerun()
+                with col_stop:
+                    if st.button("Stop & Report", width="stretch", type="secondary"):
+                        _stop_and_generate_report()
 
         # ---- Pipeline progress indicator ----
         if st.session_state.pipeline_started and st.session_state.pipeline:
@@ -259,9 +264,12 @@ def _render_chat_interface():
                     st.info(content)
 
     # ---- Finished banner ----
-    if pipeline.current_stage_index >= len(pipeline.stages):
+    results = st.session_state.evaluation_results
+    is_finished = pipeline.current_stage_index >= len(pipeline.stages)
+    has_partial_report = results and results.get("partial_report", False)
+    
+    if is_finished:
         st.success("All stages completed!")
-        results = st.session_state.evaluation_results
         if results and "final_reports_generated" not in results:
             with st.spinner("Generating final reports..."):
                 try:
@@ -270,24 +278,28 @@ def _render_chat_interface():
                     results["final_reports_generated"] = True
                 except Exception as e:
                     st.error(f"Report generation error: {e}")
-        if results and "report_directory" in results:
-            report_dir = results["report_directory"]
-            st.markdown(f"**Report Directory:** `{report_dir}`")
-            
-            # PDF Download button - use evaluation_report.txt for better formatting
-            report_path = os.path.join(report_dir, "evaluation_report.txt")
-            if os.path.exists(report_path):
-                try:
-                    pdf_bytes = generate_pdf_bytes(report_path)
-                    dataset_name = os.path.basename(report_dir).split("_")[0]
-                    st.download_button(
-                        label="📄 Download PDF Report",
-                        data=pdf_bytes,
-                        file_name=f"{dataset_name}_fairness_report.pdf",
-                        mime="application/pdf",
-                        key="download_pdf_new_eval",
-                    )
-                except Exception as e:
+    
+    # Show download button for both completed and partial reports
+    if (is_finished or has_partial_report) and results and "report_directory" in results:
+        report_dir = results["report_directory"]
+        if has_partial_report and not is_finished:
+            st.warning("⏹️ Pipeline stopped. Partial report available.")
+        st.markdown(f"**Report Directory:** `{report_dir}`")
+        
+        # PDF Download button - use evaluation_report.md for markdown formatting
+        report_path = os.path.join(report_dir, "evaluation_report.md")
+        if os.path.exists(report_path):
+            try:
+                pdf_bytes = generate_pdf_bytes(report_path)
+                dataset_name = os.path.basename(report_dir).split("_")[0]
+                st.download_button(
+                    label="📄 Download PDF Report",
+                    data=pdf_bytes,
+                    file_name=f"{dataset_name}_fairness_report.pdf",
+                    mime="application/pdf",
+                    key="download_pdf_new_eval",
+                )
+            except Exception as e:
                     st.warning(f"Could not generate PDF: {e}")
 
     # ---- Input area ----
@@ -558,3 +570,29 @@ def _reset_state():
     st.session_state.chat_messages = []
     st.session_state.confirmed_sensitive_columns = None
     st.session_state.ml_config = {"enabled": False}
+
+
+def _stop_and_generate_report():
+    """Stop the pipeline and generate a partial report with completed stages."""
+    pipeline = st.session_state.pipeline
+    if not pipeline:
+        st.warning("No pipeline to stop.")
+        return
+
+    try:
+        with st.spinner("Generating partial report..."):
+            pipeline.evaluation_results["partial_report"] = True
+            pipeline.generate_report()
+            st.session_state.evaluation_results = pipeline.evaluation_results
+            
+            st.session_state.chat_messages.append({
+                "role": "assistant",
+                "content": (
+                    "⏹️ **Pipeline stopped.** Partial report generated with completed stages.\n\n"
+                    f"**Report Directory:** `{pipeline.report_dir}`\n\n"
+                    "You can download the PDF below or reset to start a new evaluation."
+                ),
+            })
+        st.rerun()
+    except Exception as e:
+        st.error(f"Error generating report: {e}")

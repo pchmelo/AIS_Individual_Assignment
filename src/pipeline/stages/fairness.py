@@ -86,6 +86,12 @@ class TargetFairnessStage(BaseStageExecutor):
             "4. Statistical parity violations\n"
             "5. Risk of discrimination or bias in predictions\n"
             "6. Specific recommendations for achieving fairness\n\n"
+            "FORMATTING RULES:\n"
+            "- Use ## for main headers, ### for subsections\n"
+            "- Use numbered lists (1. 2. 3.) for ordered items\n"
+            "- Use bullet points (- item) for unordered lists\n"
+            "- Do NOT use ** bold markers ** around headers\n"
+            "- Do NOT use emojis, icons, or special symbols (no ✓, ✗, ■, ●, etc.)\n\n"
             "Focus on quantitative disparities and their implications."
         )
 

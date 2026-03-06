@@ -30,6 +30,18 @@ class FunctionCallerAgent(BaseAgent):
                    Example:
                    User: What's the temperature in Porto?
                    Assistant: <functioncall> {{"name": "current_temp", "arguments": {{"city": "Porto"}}}}
+
+                   OUTPUT FORMATTING RULES (MUST FOLLOW):
+                   - Use ## for main section headers (e.g., ## Summary)
+                   - Use ### for subsection headers (e.g., ### Key Findings)
+                   - Use numbered lists (1. 2. 3.) for ordered items
+                   - Use bullet points (- item) for unordered lists
+                   - For sensitive attribute tables, use this EXACT format:
+                     1. Column: ColumnName | Reason: Description | Values: [val1, val2, val3]
+                     (NO bold markers ** around Column:)
+                   - Avoid using ** bold markers ** in headers - just use the markdown header syntax
+                   - Keep text clean without excessive formatting
+                   - DO NOT use emojis, icons, or special symbols (no ✓, ✗, ■, ●, etc.)
                 """
     
     def run(self, user_message: str) -> str:

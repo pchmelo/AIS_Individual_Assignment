@@ -70,6 +70,12 @@ class ImbalanceStage(BaseStageExecutor):
             "2. Fairness risks (which groups are underrepresented?)\n"
             "3. Impact on model bias\n"
             "4. Specific mitigation recommendations\n\n"
+            "FORMATTING RULES:\n"
+            "- Use ## for main headers, ### for subsections\n"
+            "- Use numbered lists (1. 2. 3.) for ordered items\n"
+            "- Use bullet points (- item) for unordered lists\n"
+            "- Do NOT use ** bold markers ** around headers\n"
+            "- Do NOT use emojis, icons, or special symbols (no ✓, ✗, ■, ●, etc.)\n\n"
             "Focus ONLY on the sensitive columns listed above."
         )
 

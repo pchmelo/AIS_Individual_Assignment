@@ -52,7 +52,10 @@ def get_dataset_columns(dataset_name: str) -> list:
 # ---------------------------------------------------------------------------
 
 def parse_report_file(filepath: str):
-    """Parse a report text file into (header_info, stages) or None."""
+    """Parse a markdown report file into (header_info, stages) or None.
+    
+    Supports new markdown format with YAML-like frontmatter and ## headers.
+    """
     if not os.path.exists(filepath):
         return None
 
@@ -62,23 +65,39 @@ def parse_report_file(filepath: str):
     stages = {}
     lines = content.split("\n")
 
-    # Extract header metadata
+    # Extract header metadata from YAML-like frontmatter
     header_info = {}
-    for line in lines[:30]:
-        if "Dataset:" in line:
-            header_info["dataset"] = line.split("Dataset:")[1].strip()
-        elif "Timestamp:" in line:
-            header_info["timestamp"] = line.split("Timestamp:")[1].strip()
-        elif "Target Column:" in line:
-            header_info["target"] = line.split("Target Column:")[1].strip()
-        elif "User Objective:" in line:
-            header_info["objective"] = line.split("User Objective:")[1].strip()
+    in_frontmatter = False
+    frontmatter_end = 0
+    
+    for i, line in enumerate(lines[:50]):
+        if line.strip() == "---":
+            if not in_frontmatter:
+                in_frontmatter = True
+                continue
+            else:
+                frontmatter_end = i
+                break
+        
+        if in_frontmatter and ":" in line:
+            key, _, value = line.partition(":")
+            key = key.strip().lower()
+            value = value.strip()
+            if key == "dataset":
+                header_info["dataset"] = value
+            elif key == "timestamp":
+                header_info["timestamp"] = value
+            elif key in ("target_column", "target"):
+                header_info["target"] = value
+            elif key in ("objective", "user_objective"):
+                header_info["objective"] = value
 
     current_stage = None
     current_content: list = []
 
-    for line in lines:
-        stage_match = re.match(r"STAGE\s+(\d+(?:\.\d+)?)[:\s]+(.*)", line)
+    for line in lines[frontmatter_end:]:
+        # Match markdown ## Stage headers
+        stage_match = re.match(r"^##\s+Stage\s+(\d+(?:\.\d+)?)[:\s]+(.*)", line)
 
         if stage_match:
             if current_stage:
@@ -87,7 +106,8 @@ def parse_report_file(filepath: str):
             stage_name = stage_match.group(2).strip()
             current_stage = f"Stage {stage_num}: {stage_name}"
             current_content = []
-        elif line.startswith("=" * 10) or line.startswith("-" * 10):
+        elif line.startswith("# ") and not line.startswith("## "):
+            # Skip main title
             continue
         elif current_stage:
             current_content.append(line)
