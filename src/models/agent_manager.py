@@ -53,8 +53,9 @@ class AgentManager:
     Manages agent configuration, instantiation, and pipeline stage associations.    
     """
     
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Dict[str, Any] = None, api_key: str = None):
         self.config = config or {}
+        self.api_key = api_key
         
         # Cached instances
         self._agents: Dict[str, Any] = {}
@@ -72,7 +73,7 @@ class AgentManager:
             self._parse_config(config)
     
     @classmethod
-    def from_yaml(cls, yaml_path: str) -> "AgentManager":
+    def from_yaml(cls, yaml_path: str, api_key: str = None) -> "AgentManager":
         """
         Create AgentManager from a YAML configuration file.
         """
@@ -82,7 +83,7 @@ class AgentManager:
         with open(yaml_path, 'r') as f:
             config = yaml.safe_load(f)
         
-        return cls(config)
+        return cls(config, api_key=api_key)
     
     def _parse_config(self, config: Dict[str, Any]):
         self.config = config
@@ -137,7 +138,16 @@ class AgentManager:
         key = model_name or self._default_model_name
         if key and key not in self._clients:
             if self.config.get("models"):
-                self._clients[key] = ClientFactory.from_yaml_config(self.config, key)
+                # Inject api_key into config if provided
+                config = self.config
+                if self.api_key:
+                    config = config.copy()
+                    models = config.get("models", {}).copy()
+                    if key in models:
+                        models[key] = models[key].copy()
+                        models[key]["api_key"] = self.api_key
+                    config["models"] = models
+                self._clients[key] = ClientFactory.from_yaml_config(config, key)
         return self._clients.get(key)
     
     def _get_tool_manager(self, tool_name: str):

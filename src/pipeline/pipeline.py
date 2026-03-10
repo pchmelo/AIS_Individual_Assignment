@@ -7,6 +7,9 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+# Root directory of the project (parent of src/)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from models.agents.function_caller_agent import FunctionCallerAgent
 from models.agents.data_analyst_agent import DataAnalystAgent
 from models.agents.conversational_agent import ConversationalAgent
@@ -30,10 +33,12 @@ class DatasetEvaluationPipeline:
         config_path: str = None,
         default_model: str = None,
         pipeline_config_path: str = None,
+        api_key: str = None,
     ):
         self.fairness_tools = FairnessTools()
         self.bias_mitigation_tools = BiasMitigationTools()
         self.agent_manager: Optional[AgentManager] = None
+        self.api_key = api_key
 
         self._stage_definitions = (
             load_pipeline_config(pipeline_config_path)
@@ -51,7 +56,7 @@ class DatasetEvaluationPipeline:
                 f"Configuration file not found: {config_path}"
             )
         
-        self._init_from_config(config_path, default_model=default_model)
+        self._init_from_config(config_path, default_model=default_model, api_key=api_key)
 
         self.current_dataset: Optional[str] = None
         self.user_objective: Optional[str] = None
@@ -62,16 +67,16 @@ class DatasetEvaluationPipeline:
         self._current_stage_index: int = 0
         self._pipeline_ctx: Dict[str, Any] = {}
 
-        print("Pipeline initialized")
+        # Pipeline ready
 
 
-    def _init_from_config(self, config_path: str, default_model: str = None):
-        self.agent_manager = AgentManager.from_yaml(config_path)
+    def _init_from_config(self, config_path: str, default_model: str = None, api_key: str = None):
+        self.agent_manager = AgentManager.from_yaml(config_path, api_key=api_key)
         if default_model:
             self.agent_manager.config["default_model"] = default_model
         self.model_client = self.agent_manager.get_client()
         self._initialize_agents()
-        print(f"Loaded configuration from: {config_path}")
+        # Config loaded
 
     def _initialize_agents(self):
         self.file_parser_agent = self.agent_manager.get_primary_agent_for_stage("parsing")
@@ -102,7 +107,7 @@ class DatasetEvaluationPipeline:
         if self.recommendation_agent is None:
             self.recommendation_agent = ConversationalAgent(model_client=self.model_client)
 
-        print("All agents initialized from configuration")
+        # Agents ready
 
 
     def build_stages(
@@ -119,7 +124,7 @@ class DatasetEvaluationPipeline:
         self.user_objective = user_prompt
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.report_dir = os.path.join("reports", f"{dataset_name}_{timestamp}")
+        self.report_dir = os.path.join(BASE_DIR, "reports", f"{dataset_name}_{timestamp}")
         self.images_dir = os.path.join(self.report_dir, "images")
         os.makedirs(self.images_dir, exist_ok=True)
 
@@ -247,37 +252,182 @@ class DatasetEvaluationPipeline:
         user_prompt: str,
         confirmed_sensitive: list = None,
         ml_config: dict = None,
+        max_pairs: int = None,
     ) -> Dict[str, Any]:
-        """Run the full pipeline in one shot (used by terminal mode)."""
+        """Run the full pipeline in one shot (used by terminal mode).
+        
+        Args:
+            user_prompt: The evaluation objective/prompt.
+            confirmed_sensitive: Pre-confirmed sensitive columns (skip detection).
+            ml_config: ML model configuration for fairness metrics.
+            max_pairs: Maximum number of sensitive attribute pairs to analyze.
+                      If set, the agent selects the most important pairs.
+        """
         dataset_name = self._extract_dataset_name(user_prompt)
         target_column = self._extract_target_column(user_prompt)
-        print(f"Evaluating dataset: {dataset_name}")
-        if target_column:
-            print(f"Target column detected: {target_column}")
-
         self.build_stages(dataset_name, target_column, user_prompt)
 
         if confirmed_sensitive:
             self._pipeline_ctx["confirmed_sensitive_columns"] = confirmed_sensitive
         if ml_config:
             self._pipeline_ctx["ml_config"] = ml_config
+        
+        # Store max_pairs in context for pair selection
+        self._pipeline_ctx["max_pairs"] = max_pairs
 
-        print(f"\n{'=' * 80}")
-        print("DATASET EVALUATION PIPELINE")
-        print(f"{'=' * 80}\n")
+        # Count executable stages (excluding bias mitigation which is skipped)
+        executable_stages = [s for s in self._stages if s.key != "6_bias_mitigation"]
+        total_stages = len(executable_stages)
+        current_num = 0
 
         while not self.is_finished:
             stage = self.current_stage
             if stage.key == "6_bias_mitigation":
                 self._current_stage_index += 1
                 continue
-            print(f"\n{stage.name}")
-            print("-" * 80)
+            current_num += 1
+            print(f"[{current_num}/{total_stages}] {stage.name}")
             self.navigate(NavigationAction.FORWARD)
+            
+            # After sensitive attribute detection, perform smart pair selection if needed
+            if stage.key == "3_sensitive" and max_pairs is not None:
+                self._select_best_pairs(max_pairs)
 
-        print("\n" + "=" * 80)
-        print("PIPELINE COMPLETED")
-        print("=" * 80)
+        print("Done.")
+
+        return self.evaluation_results
+    
+    def _select_best_pairs(self, max_pairs: int) -> None:
+        """
+        Use the agent to intelligently select the most important pairs
+        for intersectional fairness analysis.
+        """
+        from itertools import combinations as iter_combinations
+        
+        results = self.evaluation_results.get("stages", {})
+        sensitive_cols = list(
+            results.get("3_sensitive", {}).get("sensitive_columns", [])
+        )
+        
+        # Exclude target column if present
+        target = self._pipeline_ctx.get("target_column")
+        if target and target in sensitive_cols:
+            sensitive_cols = [c for c in sensitive_cols if c != target]
+        
+        if len(sensitive_cols) < 2:
+            return  # No pairs possible
+        
+        all_pairs = list(iter_combinations(sensitive_cols, 2))
+        
+        if len(all_pairs) <= max_pairs:
+            # No need to select, use all pairs
+            self._pipeline_ctx["selected_pairs"] = all_pairs
+            self._pipeline_ctx["pair_selection_reasoning"] = (
+                f"All {len(all_pairs)} pairs selected (within max_pairs={max_pairs} limit)."
+            )
+            return
+        
+        # Ask agent to select best pairs
+        print(f"  Selecting {max_pairs} most important pairs from {len(all_pairs)} possible...")
+        
+        pair_list_str = "\n".join([f"  - {p[0]} + {p[1]}" for p in all_pairs])
+        
+        prompt = f"""You are analyzing a dataset for fairness. The following sensitive attributes were detected:
+{', '.join(sensitive_cols)}
+
+All possible attribute pairs for intersectional analysis ({len(all_pairs)} total):
+{pair_list_str}
+
+Select exactly {max_pairs} pairs that are MOST IMPORTANT for fairness analysis. Consider:
+1. Historical discrimination patterns (e.g., Race+Sex, Age+Gender are commonly studied)
+2. Potential for intersectional bias (combinations that may compound disadvantage)
+3. Relevance to employment/lending/healthcare fairness (depending on context)
+4. Statistical significance (pairs that likely have enough data points)
+
+Respond in this EXACT format:
+SELECTED_PAIRS:
+- Attribute1 + Attribute2
+- Attribute3 + Attribute4
+
+REASONING:
+<Your explanation of why these pairs were selected>"""
+        
+        try:
+            response = self.recommendation_agent.run(prompt)
+            
+            # Parse selected pairs from response
+            selected = []
+            reasoning = ""
+            lines = response.strip().split("\n")
+            in_pairs = False
+            in_reasoning = False
+            reasoning_lines = []
+            
+            for line in lines:
+                line_stripped = line.strip()
+                if "SELECTED_PAIRS:" in line.upper():
+                    in_pairs = True
+                    in_reasoning = False
+                    continue
+                if "REASONING:" in line.upper():
+                    in_pairs = False
+                    in_reasoning = True
+                    continue
+                
+                if in_pairs and line_stripped.startswith("-"):
+                    # Parse "- Attr1 + Attr2" format
+                    pair_str = line_stripped[1:].strip()
+                    if "+" in pair_str:
+                        parts = [p.strip() for p in pair_str.split("+")]
+                        if len(parts) == 2:
+                            # Find matching pair (order-independent)
+                            for p in all_pairs:
+                                if (parts[0] == p[0] and parts[1] == p[1]) or \
+                                   (parts[0] == p[1] and parts[1] == p[0]):
+                                    if p not in selected:
+                                        selected.append(p)
+                                    break
+                
+                if in_reasoning:
+                    reasoning_lines.append(line_stripped)
+            
+            reasoning = " ".join(reasoning_lines).strip()
+            
+            # Validate we got enough pairs
+            if len(selected) < max_pairs:
+                # Fall back to first N pairs if parsing failed
+                print(f"  Warning: Only parsed {len(selected)} pairs, using first {max_pairs}")
+                selected = all_pairs[:max_pairs]
+                reasoning = f"Automatic selection: first {max_pairs} pairs (agent parsing issue)."
+            elif len(selected) > max_pairs:
+                selected = selected[:max_pairs]
+            
+            self._pipeline_ctx["selected_pairs"] = selected
+            self._pipeline_ctx["pair_selection_reasoning"] = reasoning or "Agent selected these pairs based on fairness analysis criteria."
+            
+            # Save to evaluation results for the report
+            self._save_pair_selection_to_results(selected, reasoning, all_pairs, max_pairs)
+            
+            print(f"  Selected pairs: {[f'{p[0]}+{p[1]}' for p in selected]}")
+            
+        except Exception as e:
+            # Fallback: use first N pairs
+            print(f"  Warning: Pair selection failed ({e}), using first {max_pairs} pairs")
+            selected = all_pairs[:max_pairs]
+            self._pipeline_ctx["selected_pairs"] = selected
+            self._pipeline_ctx["pair_selection_reasoning"] = f"Automatic selection: first {max_pairs} pairs (fallback)."
+            self._save_pair_selection_to_results(selected, self._pipeline_ctx["pair_selection_reasoning"], all_pairs, max_pairs)
+    
+    def _save_pair_selection_to_results(self, selected: list, reasoning: str, all_pairs: list, max_pairs: int) -> None:
+        """Save pair selection info to evaluation results for the report."""
+        # Update the sensitive stage results with pair selection info
+        if "3_sensitive" in self.evaluation_results.get("stages", {}):
+            self.evaluation_results["stages"]["3_sensitive"]["pair_selection"] = {
+                "max_pairs_limit": max_pairs,
+                "total_possible_pairs": len(all_pairs),
+                "selected_pairs": [f"{p[0]} + {p[1]}" for p in selected],
+                "reasoning": reasoning,
+            }
 
         return self.evaluation_results
 
@@ -344,16 +494,15 @@ class DatasetEvaluationPipeline:
         shutil.copy2(md_path, backup_path)
         print(f"Report backup saved: {backup_path}")
         
-        # Generate and save PDF copy in the root reports folder
+        # Generate and save PDF inside the report folder
         try:
-            root_reports_dir = os.path.dirname(self.report_dir)
-            pdf_path = os.path.join(root_reports_dir, f"{self.current_dataset}_latest_report.pdf")
+            pdf_path = os.path.join(self.report_dir, "evaluation_report.pdf")
             pdf_bytes = generate_pdf_bytes(md_path)
             with open(pdf_path, "wb") as f:
                 f.write(pdf_bytes)
-            print(f"Latest PDF report saved: {pdf_path}")
+            print(f"PDF report saved: {pdf_path}")
         except Exception as e:
-            print(f"Warning: Could not generate PDF copy: {e}")
+            print(f"Warning: Could not generate PDF: {e}")
         
         return md_content
 
@@ -411,6 +560,11 @@ class DatasetEvaluationPipeline:
                 lines.append("")
                 lines.append(stage_data["agent_analysis"])
                 lines.append("")
+                
+                # Add pair selection info for sensitive stage
+                if stage_key == "3_sensitive" and "pair_selection" in stage_data:
+                    self._format_pair_selection_markdown(lines, stage_data["pair_selection"])
+                    
             elif "recommendations" in stage_data:
                 lines.append("### Recommendations")
                 lines.append("")
@@ -488,6 +642,22 @@ class DatasetEvaluationPipeline:
                     lines.append(comparison_result["agent_analysis"])
                     lines.append("")
 
+    def _format_pair_selection_markdown(self, lines: List[str], pair_selection: Dict[str, Any]) -> None:
+        """Format pair selection info as markdown."""
+        lines.append("### Intersectional Pair Selection")
+        lines.append("")
+        lines.append(f"**Max Pairs Limit:** {pair_selection.get('max_pairs_limit', 'N/A')}")
+        lines.append(f"**Total Possible Pairs:** {pair_selection.get('total_possible_pairs', 'N/A')}")
+        lines.append("")
+        lines.append("**Selected Pairs for Analysis:**")
+        for pair in pair_selection.get("selected_pairs", []):
+            lines.append(f"- {pair}")
+        lines.append("")
+        lines.append("**Selection Reasoning:**")
+        lines.append("")
+        lines.append(pair_selection.get("reasoning", "No reasoning provided."))
+        lines.append("")
+
     def _generate_json_data(self) -> Dict[str, Any]:
         """Generate JSON file with all tool results organized by stage."""
         dataset_hash = hashlib.md5(self.current_dataset.encode()).hexdigest()[:8]
@@ -513,6 +683,8 @@ class DatasetEvaluationPipeline:
                     stage_json["tool_used"] = stage_data["tool_used"]
                 if "tool_result" in stage_data:
                     stage_json["tool_result"] = stage_data["tool_result"]
+                if "pair_selection" in stage_data:
+                    stage_json["pair_selection"] = stage_data["pair_selection"]
                 if "ml_model_results" in stage_data:
                     stage_json["ml_model_results"] = stage_data["ml_model_results"]
                 if "intersectional_ml_model_results" in stage_data:

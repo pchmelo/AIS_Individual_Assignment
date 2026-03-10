@@ -49,7 +49,7 @@ class GeminiClient(BaseModelClient):
         self.model = genai.GenerativeModel(self.model_name)
         
         self._initialized = True
-        print(f"Gemini client initialized: {self.model_name}")
+        # Client ready
     
     def generate(
         self, 

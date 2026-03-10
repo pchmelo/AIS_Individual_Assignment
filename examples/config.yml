@@ -1,0 +1,201 @@
+# =============================================================================
+# Fairness Evaluation - Example Configuration
+# =============================================================================
+# Copy this file and customize it for your needs.
+# Save as config.yml and pass to FairnessEvaluator(config_path="config.yml")
+#
+# Environment Variables Required:
+#   OPENROUTER_API_KEY  - For OpenRouter models (free tier available)
+#   GOOGLE_API_KEY      - For Google Gemini models
+#
+# You can also create a .env file in the same directory:
+#   OPENROUTER_API_KEY=sk-or-v1-your-key-here
+#   GOOGLE_API_KEY=your-google-key-here
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Default Model
+# -----------------------------------------------------------------------------
+# Which model to use by default for all agents.
+# Must match one of the model names defined below.
+
+default_model: openrouter-free  # Change to your preferred model
+
+
+# -----------------------------------------------------------------------------
+# Models Configuration
+# -----------------------------------------------------------------------------
+# Define available AI models. Supports three providers:
+#   - openrouter: Cloud API with many models (some free)
+#   - gemini: Google's Gemini models
+#   - local: Run models locally with transformers
+
+models:
+  # ---- Free OpenRouter Model (Recommended for testing) ----
+  openrouter-free:
+    provider: openrouter
+    model: "stepfun/step-3.5-flash:free"  # Free model with good performance
+    base_url: "https://openrouter.ai/api/v1"
+    model_info:
+      function_calling: true
+      vision: false
+      structured_output: true
+
+  # ---- Alternative Free OpenRouter Models ----
+  # Uncomment to use different free models
+  
+  # llama-free:
+  #   provider: openrouter
+  #   model: "meta-llama/llama-3.2-3b-instruct:free"
+  #   base_url: "https://openrouter.ai/api/v1"
+  #   model_info:
+  #     function_calling: true
+
+  # qwen-free:
+  #   provider: openrouter
+  #   model: "qwen/qwen-2.5-72b-instruct:free"
+  #   base_url: "https://openrouter.ai/api/v1"
+  #   model_info:
+  #     function_calling: true
+
+  # ---- Paid OpenRouter Models (Better quality) ----
+  # openrouter-gpt4:
+  #   provider: openrouter
+  #   model: "openai/gpt-4o-mini"
+  #   base_url: "https://openrouter.ai/api/v1"
+  #   model_info:
+  #     function_calling: true
+
+  # openrouter-claude:
+  #   provider: openrouter
+  #   model: "anthropic/claude-3.5-sonnet"
+  #   base_url: "https://openrouter.ai/api/v1"
+  #   model_info:
+  #     function_calling: true
+
+  # ---- Google Gemini ----
+  gemini-flash:
+    provider: gemini
+    model: "gemini-2.0-flash"
+    # api_key: loaded from GOOGLE_API_KEY env var automatically
+
+  # gemini-pro:
+  #   provider: gemini
+  #   model: "gemini-1.5-pro"
+
+  # ---- Local Models (Requires GPU or powerful CPU) ----
+  # local-mistral:
+  #   provider: local
+  #   model: "mistralai/Mistral-7B-Instruct-v0.2"
+  #   device: "auto"  # "cuda", "cpu", or "auto"
+  #   dtype: "float16"  # "float16", "bfloat16", or "float32"
+
+
+# -----------------------------------------------------------------------------
+# Tools Configuration
+# -----------------------------------------------------------------------------
+# Available tool managers. Don't modify unless adding custom tools.
+
+tools:
+  fairness:
+    class: "FairnessTools"
+    description: "Tools for fairness analysis and dataset inspection"
+  
+  bias_mitigation:
+    class: "BiasMitigationTools"
+    description: "Tools for bias mitigation techniques (SMOTE, reweighting, etc.)"
+
+
+# -----------------------------------------------------------------------------
+# Agents Configuration
+# -----------------------------------------------------------------------------
+# Agents that perform different tasks in the pipeline.
+# Each agent can optionally specify its own model.
+#
+# Agent types:
+#   - FunctionCallerAgent: Executes tools/functions
+#   - DataAnalystAgent: Analyzes data and provides insights
+#   - ConversationalAgent: General conversation, no tools
+
+agents:
+  file_parser:
+    type: FunctionCallerAgent
+    # model: gemini-flash  # Uncomment to use different model for this agent
+    tools: [fairness]
+    stages: [parsing]
+    reflect_on_tool_use: true
+  
+  inspector:
+    type: FunctionCallerAgent
+    tools: [fairness]
+    stages: [inspection]
+    reflect_on_tool_use: true
+  
+  quality_analyst:
+    type: DataAnalystAgent
+    tools: [fairness]
+    stages: [quality_analysis]
+  
+  fairness_analyst:
+    type: DataAnalystAgent
+    tools: [fairness]
+    stages: [fairness_analysis]
+  
+  bias_mitigator:
+    type: FunctionCallerAgent
+    tools: [bias_mitigation]
+    stages: [mitigation]
+    reflect_on_tool_use: true
+  
+  recommendation:
+    type: ConversationalAgent
+    tools: []
+    stages: [recommendation]
+
+
+# -----------------------------------------------------------------------------
+# Pipeline Configuration
+# -----------------------------------------------------------------------------
+# Defines the order of evaluation stages.
+# Each stage can have one or more agents.
+
+pipeline:
+  stages:
+    - name: parsing
+      description: "Parse and load the dataset"
+      agents: [file_parser]
+    
+    - name: inspection
+      description: "Initial dataset inspection and validation"
+      agents: [inspector]
+    
+    - name: quality_analysis
+      description: "Analyze data quality issues"
+      agents: [quality_analyst]
+    
+    - name: fairness_analysis
+      description: "Analyze fairness and bias metrics"
+      agents: [fairness_analyst]
+    
+    - name: mitigation
+      description: "Apply bias mitigation techniques"
+      agents: [bias_mitigator]
+    
+    - name: recommendation
+      description: "Generate recommendations and summary"
+      agents: [recommendation]
+
+
+# -----------------------------------------------------------------------------
+# Evaluation Settings
+# -----------------------------------------------------------------------------
+# Fine-tune evaluation behavior.
+
+evaluation:
+  # Maximum number of sensitive attribute pairs to analyze for intersectional
+  # fairness. When set, the agent will intelligently select the most important
+  # pairs based on potential fairness concerns (e.g., Sex+Race, Age+Education).
+  # Set to null or remove to analyze all possible pairs.
+  # The reasoning for pair selection is saved in the evaluation results.
+  max_pairs: 2  # Recommended: 2-5 for faster evaluation, null for comprehensive

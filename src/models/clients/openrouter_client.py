@@ -49,7 +49,6 @@ class OpenRouterClient(BaseModelClient):
             )
         
         self._initialized = True
-        print(f"OpenRouter client initialized: {self.model}")
     
     def generate(
         self, 
@@ -64,7 +63,9 @@ class OpenRouterClient(BaseModelClient):
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens
+            "max_tokens": max_tokens,
+            # Add middle-out transform to automatically compress prompts exceeding context limit
+            "transforms": ["middle-out"]
         }
         
         # Add optional parameters
@@ -88,7 +89,17 @@ class OpenRouterClient(BaseModelClient):
 
             if response.status_code == 200:
                 result = response.json()
-                return result["choices"][0]["message"]["content"]
+                message = result["choices"][0]["message"]
+                # Handle reasoning models that return content=null with reasoning field
+                content = message.get("content")
+                if content is not None:
+                    return content
+                # Fallback to reasoning field for reasoning models (e.g., stepfun)
+                reasoning = message.get("reasoning")
+                if reasoning is not None:
+                    return reasoning
+                # If both are None, return empty string
+                return ""
 
             if response.status_code in retryable_codes and attempt < max_retries:
                 delay = base_delay * (2 ** attempt)

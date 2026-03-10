@@ -181,6 +181,7 @@ datasets/
 logs/
 outputs/
 results/
+reports/*
 *.log
 
 # Reports (keep directory, ignore contents)

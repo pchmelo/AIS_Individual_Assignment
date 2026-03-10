@@ -251,7 +251,6 @@ class FairnessTools(ToolManager):
         
         for path in possible_paths:
             if os.path.exists(path):
-                print(f"Found dataset at: {path}")
                 return path
         
         raise FileNotFoundError(
