@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import os
 import sys
+import yaml
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+import shutil
+import traceback
+from models.agents.base_agent import APIError
 
 import pandas as pd
+from pipeline.pipeline import DatasetEvaluationPipeline
+
 
 # Add src to path for imports when running as standalone
 _SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -48,29 +54,6 @@ class VerificationResult:
     def __repr__(self) -> str:
         status = "OK" if self.success else "FAILED"
         return f"VerificationResult({status}, model={self.model_name})"
-
-
-@dataclass
-class DoctorResult:
-    """Result of the doctor() diagnostic check."""
-    
-    all_passed: bool
-    checks: Dict[str, Dict[str, Any]]  # check_name -> {passed, message, details}
-    
-    def __repr__(self) -> str:
-        passed = sum(1 for c in self.checks.values() if c.get("passed"))
-        total = len(self.checks)
-        return f"DoctorResult({passed}/{total} checks passed)"
-    
-    def summary(self) -> str:
-        """Get a formatted summary of all checks."""
-        lines = []
-        for name, result in self.checks.items():
-            status = "PASS" if result.get("passed") else "FAIL"
-            lines.append(f"[{status}] {name}: {result.get('message', '')}")
-            if result.get("details") and not result.get("passed"):
-                lines.append(f"       {result.get('details')}")
-        return "\n".join(lines)
 
 
 class FairnessEvaluator:
@@ -132,9 +115,7 @@ class FairnessEvaluator:
         """Lazily initialize the pipeline."""
         if self._initialized:
             return
-        
-        from pipeline.pipeline import DatasetEvaluationPipeline
-        
+                
         self._pipeline = DatasetEvaluationPipeline(
             config_path=self.config_path,
             default_model=self.model_override,
@@ -142,12 +123,9 @@ class FairnessEvaluator:
         )
         self._initialized = True
     
-    def verify(self, test_prompt: bool = False) -> VerificationResult:
+    def verify(self) -> VerificationResult:
         """
         Verify that the configuration is valid and the system is ready.
-        
-        Args:
-            test_prompt: If True, sends a test prompt to verify API connectivity.
         
         Returns:
             VerificationResult with status and any errors/warnings.
@@ -206,22 +184,6 @@ class FairnessEvaluator:
             if not api_key:
                 warnings.append("GOOGLE_API_KEY environment variable not set")
         
-        # Optional: Test API connectivity
-        if test_prompt and not errors:
-            try:
-                if self.verbose:
-                    print("Testing API connectivity...")
-                # Simple test message
-                response = self._pipeline.model_client.chat.completions.create(
-                    model=model_config.get("model", model_name),
-                    messages=[{"role": "user", "content": "Say 'OK' if you can read this."}],
-                    max_tokens=10,
-                )
-                if self.verbose:
-                    print("  API test: OK")
-            except Exception as e:
-                errors.append(f"API connectivity test failed: {str(e)}")
-        
         success = len(errors) == 0
         
         if self.verbose:
@@ -244,200 +206,14 @@ class FairnessEvaluator:
             warnings=warnings,
         )
     
-    def doctor(self, dataset: Optional[str] = None) -> DoctorResult:
-        """
-        Run diagnostic checks to identify common problems before evaluation.
-        
-        Checks performed:
-        - Configuration file exists and is valid YAML
-        - Required dependencies are installed
-        - API key is set and valid (makes a test request)
-        - Model is available and responding
-        - Dataset file exists (if provided)
-        - Output directory is writable
-        
-        Args:
-            dataset: Optional path to dataset to check. Can be a filename in data/
-                     or a full path.
-        
-        Returns:
-            DoctorResult with all check results.
-        
-        Example:
-            >>> evaluator = FairnessEvaluator(api_key="sk-...")
-            >>> result = evaluator.doctor("adult-all.csv")
-            >>> if not result.all_passed:
-            ...     print(result.summary())
-        """
-        checks: Dict[str, Dict[str, Any]] = {}
-        
-        def add_check(name: str, passed: bool, message: str, details: str = None):
-            checks[name] = {"passed": passed, "message": message, "details": details}
-            if self.verbose:
-                status = "PASS" if passed else "FAIL"
-                print(f"  [{status}] {name}: {message}")
-                if details and not passed:
-                    print(f"         {details}")
-        
-        if self.verbose:
-            print("\nRunning diagnostic checks...\n")
-        
-        # 1. Check config file
-        if os.path.exists(self.config_path):
-            try:
-                import yaml
-                with open(self.config_path, 'r') as f:
-                    config = yaml.safe_load(f)
-                if config and isinstance(config, dict):
-                    add_check("Config File", True, "Valid YAML configuration")
-                else:
-                    add_check("Config File", False, "Config file is empty or invalid")
-            except Exception as e:
-                add_check("Config File", False, "Failed to parse YAML", str(e))
-        else:
-            add_check("Config File", False, "Config file not found", self.config_path)
-        
-        # 2. Check dependencies
-        missing_deps = []
-        optional_missing = []
-        for dep in ["pandas", "numpy", "yaml"]:
-            try:
-                __import__(dep)
-            except ImportError:
-                missing_deps.append(dep)
-        
-        for dep in ["reportlab", "aif360"]:
-            try:
-                __import__(dep)
-            except ImportError:
-                optional_missing.append(dep)
-        
-        if not missing_deps:
-            msg = "All required packages installed"
-            if optional_missing:
-                msg += f" (optional missing: {', '.join(optional_missing)})"
-            add_check("Dependencies", True, msg)
-        else:
-            add_check("Dependencies", False, "Missing required packages", 
-                     f"Install: pip install {' '.join(missing_deps)}")
-        
-        # 3. Check model configuration
-        try:
-            self._ensure_initialized()
-            model_name = self._pipeline.agent_manager.config.get("default_model", "unknown")
-            model_config = self._pipeline.agent_manager.config.get("models", {}).get(model_name, {})
-            provider = model_config.get("provider", "unknown")
-            model_id = model_config.get("model", model_name)
-            add_check("Model Config", True, f"{provider}/{model_id}")
-        except Exception as e:
-            add_check("Model Config", False, "Failed to load model config", str(e))
-            # Can't continue without model config
-            return DoctorResult(all_passed=False, checks=checks)
-        
-        # 4. Check API key
-        api_key = self.api_key
-        if not api_key:
-            if provider == "openrouter":
-                api_key = os.environ.get("OPENROUTER_API_KEY")
-            elif provider in ["gemini", "google"]:
-                api_key = os.environ.get("GOOGLE_API_KEY")
-        
-        if api_key:
-            # Check key format
-            if provider == "openrouter" and not api_key.startswith("sk-or-"):
-                add_check("API Key Format", False, "Invalid OpenRouter key format",
-                         "Key should start with 'sk-or-'. Get one at https://openrouter.ai/keys")
-            elif provider in ["gemini", "google"] and len(api_key) < 20:
-                add_check("API Key Format", False, "API key seems too short")
-            else:
-                add_check("API Key Format", True, "Key format looks valid")
-        else:
-            env_var = "OPENROUTER_API_KEY" if provider == "openrouter" else "GOOGLE_API_KEY"
-            add_check("API Key Format", False, "No API key found",
-                     f"Pass api_key parameter or set {env_var} environment variable")
-        
-        # 5. Test API connectivity (make a real request)
-        if api_key and checks.get("API Key Format", {}).get("passed", False):
-            try:
-                test_messages = [{"role": "user", "content": "Reply with just: OK"}]
-                response = self._pipeline.model_client.generate(test_messages, max_tokens=5)
-                if response:
-                    add_check("API Connection", True, "Model responding correctly")
-                else:
-                    add_check("API Connection", False, "Model returned empty response")
-            except Exception as e:
-                error_str = str(e)
-                if "401" in error_str:
-                    add_check("API Connection", False, "Authentication failed",
-                             "Your API key is invalid or expired. Generate a new one.")
-                elif "403" in error_str:
-                    add_check("API Connection", False, "Access forbidden",
-                             "Your key may not have access to this model.")
-                elif "429" in error_str:
-                    add_check("API Connection", False, "Rate limited",
-                             "Too many requests. Wait a moment and try again.")
-                elif "model" in error_str.lower() and "not found" in error_str.lower():
-                    add_check("API Connection", False, "Model not found",
-                             f"Model '{model_id}' is not available. Check the model name.")
-                else:
-                    add_check("API Connection", False, "Connection failed", error_str[:100])
-        
-        # 6. Check dataset (if provided)
-        if dataset:
-            dataset_path = None
-            # Try different paths
-            possible_paths = [
-                dataset,
-                os.path.join(_SRC_DIR, "data", dataset),
-                os.path.join(_SRC_DIR, "data", f"{dataset}.csv") if not dataset.endswith('.csv') else None,
-            ]
-            possible_paths = [p for p in possible_paths if p]
-            
-            for path in possible_paths:
-                if os.path.exists(path):
-                    dataset_path = path
-                    break
-            
-            if dataset_path:
-                try:
-                    df = pd.read_csv(dataset_path, nrows=5)
-                    rows_info = "readable"
-                    add_check("Dataset", True, f"Found at {os.path.basename(dataset_path)} ({len(df.columns)} columns)")
-                except Exception as e:
-                    add_check("Dataset", False, "File exists but cannot be read", str(e)[:80])
-            else:
-                add_check("Dataset", False, "Dataset not found",
-                         f"Tried: {', '.join(os.path.basename(p) for p in possible_paths)}")
-        
-        # 7. Check output directory
-        try:
-            os.makedirs(self.output_dir, exist_ok=True)
-            test_file = os.path.join(self.output_dir, ".write_test")
-            with open(test_file, 'w') as f:
-                f.write("test")
-            os.remove(test_file)
-            add_check("Output Directory", True, "Writable")
-        except Exception as e:
-            add_check("Output Directory", False, "Cannot write to output directory", str(e))
-        
-        all_passed = all(c.get("passed", False) for c in checks.values())
-        
-        if self.verbose:
-            print()
-            if all_passed:
-                print("All checks passed! Ready to evaluate.")
-            else:
-                failed = sum(1 for c in checks.values() if not c.get("passed"))
-                print(f"{failed} check(s) failed. Fix the issues above before evaluating.")
-        
-        return DoctorResult(all_passed=all_passed, checks=checks)
-
     def evaluate(
         self,
         data: Union[str, Path, pd.DataFrame],
         target: Optional[str] = None,
         objective: Optional[str] = None,
         sensitive_columns: Optional[List[str]] = None,
+        sensitive_pairs: Optional[List[List[str]]] = None,
+        mitigation_techniques: Optional[List[str]] = None,
         ml_config: Optional[Dict[str, Any]] = None,
         output_dir: Optional[str] = None,
         generate_pdf: bool = True,
@@ -450,13 +226,22 @@ class FairnessEvaluator:
             data: Path to CSV file, or a pandas DataFrame.
             target: Target column name for classification. Auto-detected if None.
             objective: Custom objective/prompt for the evaluation.
-            sensitive_columns: List of sensitive attribute columns. Auto-detected if None.
+            sensitive_columns: List of sensitive attribute columns to analyze.
+                              If None, uses config settings (auto-detect or restricted list).
+            sensitive_pairs: List of attribute pairs to analyze for intersectionality.
+                            Each pair is a list of two column names, e.g. [["Sex", "Race"]].
+                            If None, uses config settings (auto-select or restricted list).
+            mitigation_techniques: List of bias mitigation techniques to apply.
+                                  Options: "reweighting", "smote", "resampling",
+                                  "oversampling", "undersampling".
+                                  If None, reads from config. If config also has none,
+                                  mitigation stage is skipped entirely.
             ml_config: ML model configuration for fairness metrics.
             output_dir: Override output directory for this run.
             generate_pdf: Whether to generate PDF report.
             max_pairs: Maximum number of sensitive attribute pairs to analyze.
-                      If set, the agent selects the most important pairs.
-                      If None, uses value from config or analyzes all pairs.
+                      Only used when sensitive_pairs is None and config type is "auto".
+                      If None, uses value from config.
         
         Returns:
             EvaluationResult with paths to generated reports.
@@ -502,7 +287,6 @@ class FairnessEvaluator:
             expected_path = Path(_SRC_DIR) / "data" / dataset_name
             if data_path.resolve() != expected_path.resolve():
                 os.makedirs(expected_path.parent, exist_ok=True)
-                import shutil
                 shutil.copy2(data_path, expected_path)
         
         # Build objective prompt
@@ -517,17 +301,74 @@ class FairnessEvaluator:
             print(f"\nEvaluating '{dataset_name}' (target: {target or 'auto-detect'})")
         
         try:
+            # Load evaluation config directly from YAML file
+            cfg: Dict[str, Any] = {}
+            if os.path.exists(self.config_path):
+                with open(self.config_path, "r", encoding="utf-8") as _f:
+                    cfg = yaml.safe_load(_f) or {}
+            
+            # Fall back to config target_column if not explicitly provided
+            if target is None:
+                target = cfg.get("target_column") or None
+                if self.verbose and target:
+                    print(f"Using target column from config: {target}")
+            
+            # Handle sensitive attribute analysis configuration
+            sens_attr_config = cfg.get("sensitive_attribute_analysis", {})
+            if sensitive_columns is None and sens_attr_config.get("type") == "restricted":
+                # Use restricted list from config
+                sensitive_columns = sens_attr_config.get("attributes", [])
+                if self.verbose and sensitive_columns:
+                    print(f"Using restricted sensitive attributes: {sensitive_columns}")
+            
+            # Handle pair evaluation configuration
+            pair_config = cfg.get("pair_evaluation", {})
+            final_sensitive_pairs = sensitive_pairs  # Start with explicit parameter
+            
+            if final_sensitive_pairs is None and pair_config.get("type") == "restricted":
+                # Use restricted pairs from config
+                final_sensitive_pairs = pair_config.get("pairs", [])
+                if self.verbose and final_sensitive_pairs:
+                    print(f"Using restricted pairs: {final_sensitive_pairs}")
+            
             # Load max_pairs from config if not provided
             if max_pairs is None:
-                eval_config = self._pipeline.agent_manager.config.get("evaluation", {})
-                max_pairs = eval_config.get("max_pairs")
+                max_pairs = pair_config.get("max_pairs")
+            
+            # Handle mitigation techniques configuration
+            _TECHNIQUE_DISPLAY = {
+                "reweighting": "Reweighting",
+                "resampling": "SMOTE",
+                "smote": "SMOTE",
+                "oversampling": "Random Oversampling",
+                "undersampling": "Random Undersampling",
+            }
+            final_mitigation_config = None
+            techniques = mitigation_techniques
+            if techniques is None:
+                mitigation_cfg = cfg.get("mitigation_techniques", {})
+                techniques = mitigation_cfg.get("techniques", [])
+            if techniques:
+                methods = {}
+                for t in techniques:
+                    display = _TECHNIQUE_DISPLAY.get(t.lower())
+                    if display:
+                        methods[display] = {}
+                    else:
+                        warnings.append(f"Unknown mitigation technique '{t}', skipped.")
+                if methods:
+                    final_mitigation_config = {"methods": methods}
+                    if self.verbose:
+                        print(f"Applying mitigation: {list(methods.keys())}")
             
             # Run the pipeline
             self._pipeline.evaluate_dataset(
                 user_prompt=objective,
                 confirmed_sensitive=sensitive_columns,
+                sensitive_pairs=final_sensitive_pairs,
                 ml_config=ml_config,
                 max_pairs=max_pairs,
+                mitigation_config=final_mitigation_config,
             )
             
             # Generate report
@@ -568,7 +409,6 @@ class FairnessEvaluator:
             )
         
         except Exception as e:
-            from models.agents.base_agent import APIError
             
             # Handle API errors with clean messages
             if isinstance(e, APIError):
@@ -578,7 +418,6 @@ class FairnessEvaluator:
             else:
                 error_msg = f"{type(e).__name__}: {str(e)}"
                 if self.verbose:
-                    import traceback
                     print(f"\nEvaluation failed: {error_msg}")
                     traceback.print_exc()
             
@@ -595,30 +434,3 @@ class FairnessEvaluator:
                 stages_completed=stages_completed,
             )
 
-
-def create_evaluator(
-    config_path: Optional[str] = None,
-    output_dir: Optional[str] = None,
-    model: Optional[str] = None,
-    verbose: bool = True,
-) -> FairnessEvaluator:
-    """
-    Factory function to create a FairnessEvaluator instance.
-    
-    This is a convenience function for creating evaluators with common configurations.
-    
-    Args:
-        config_path: Path to YAML config file.
-        output_dir: Base directory for reports.
-        model: Override default model.
-        verbose: Print progress messages.
-    
-    Returns:
-        Configured FairnessEvaluator instance.
-    """
-    return FairnessEvaluator(
-        config_path=config_path,
-        output_dir=output_dir,
-        model=model,
-        verbose=verbose,
-    )

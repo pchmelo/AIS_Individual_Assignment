@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import shutil
 import hashlib
 import os
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from itertools import combinations as iter_combinations
 
 # Root directory of the project (parent of src/)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -219,6 +219,15 @@ class DatasetEvaluationPipeline:
         result = stage.execute(self._pipeline_ctx)
         self.evaluation_results["stages"][stage.key] = result
         self._current_stage_index += 1
+        
+        # After sensitive attribute detection, handle pair selection (GUI mode)
+        if stage.key == "3_sensitive":
+            user_pairs = self._pipeline_ctx.get("user_specified_pairs")
+            max_pairs = self._pipeline_ctx.get("max_pairs")
+            # Only run if not already set (avoid overwriting user's chat-based overrides)
+            if "selected_pairs" not in self._pipeline_ctx or self._pipeline_ctx["selected_pairs"] is None:
+                self._handle_pair_selection(user_pairs, max_pairs)
+        
         return result
 
     def _go_backward(self, user_context: str = "") -> Dict[str, Any]:
@@ -251,17 +260,27 @@ class DatasetEvaluationPipeline:
         self,
         user_prompt: str,
         confirmed_sensitive: list = None,
+        sensitive_pairs: list = None,
         ml_config: dict = None,
         max_pairs: int = None,
+        mitigation_config: dict = None,
     ) -> Dict[str, Any]:
         """Run the full pipeline in one shot (used by terminal mode).
         
         Args:
             user_prompt: The evaluation objective/prompt.
             confirmed_sensitive: Pre-confirmed sensitive columns (skip detection).
+            sensitive_pairs: Pre-defined pairs for intersectional analysis.
+                            Each pair is a tuple/list of two column names.
+                            If provided, uses these pairs directly (restricted mode).
+                            If None, pairs are auto-selected based on max_pairs.
             ml_config: ML model configuration for fairness metrics.
             max_pairs: Maximum number of sensitive attribute pairs to analyze.
+                      Only used when sensitive_pairs is None.
                       If set, the agent selects the most important pairs.
+            mitigation_config: Bias mitigation configuration dict with format
+                              {"methods": {"Reweighting": {}, "SMOTE": {}}}.
+                              If None, the mitigation stage is skipped.
         """
         dataset_name = self._extract_dataset_name(user_prompt)
         target_column = self._extract_target_column(user_prompt)
@@ -271,38 +290,104 @@ class DatasetEvaluationPipeline:
             self._pipeline_ctx["confirmed_sensitive_columns"] = confirmed_sensitive
         if ml_config:
             self._pipeline_ctx["ml_config"] = ml_config
+        if mitigation_config:
+            self._pipeline_ctx["mitigation_config"] = mitigation_config
         
-        # Store max_pairs in context for pair selection
+        # Store pair configuration in context
         self._pipeline_ctx["max_pairs"] = max_pairs
+        self._pipeline_ctx["user_specified_pairs"] = sensitive_pairs
 
-        # Count executable stages (excluding bias mitigation which is skipped)
-        executable_stages = [s for s in self._stages if s.key != "6_bias_mitigation"]
+        # Count executable stages (skip mitigation if not configured)
+        run_mitigation = bool(mitigation_config)
+        executable_stages = [
+            s for s in self._stages
+            if s.key != "6_bias_mitigation" or run_mitigation
+        ]
         total_stages = len(executable_stages)
         current_num = 0
 
         while not self.is_finished:
             stage = self.current_stage
-            if stage.key == "6_bias_mitigation":
+            if stage.key == "6_bias_mitigation" and not run_mitigation:
                 self._current_stage_index += 1
                 continue
             current_num += 1
             print(f"[{current_num}/{total_stages}] {stage.name}")
             self.navigate(NavigationAction.FORWARD)
             
-            # After sensitive attribute detection, perform smart pair selection if needed
-            if stage.key == "3_sensitive" and max_pairs is not None:
-                self._select_best_pairs(max_pairs)
+            # After sensitive attribute detection, handle pair selection
+            if stage.key == "3_sensitive":
+                self._handle_pair_selection(sensitive_pairs, max_pairs)
 
         print("Done.")
 
         return self.evaluation_results
+    
+    def _handle_pair_selection(self, sensitive_pairs: list = None, max_pairs: int = None) -> None:
+        """
+        Handle pair selection after sensitive attribute detection.
+        
+        Args:
+            sensitive_pairs: User-specified pairs for restricted mode. If provided,
+                           these pairs are used directly without agent selection.
+            max_pairs: Maximum pairs for auto mode. If set, agent selects best pairs.
+        """
+        
+        results = self.evaluation_results.get("stages", {})
+        sensitive_cols = list(
+            results.get("3_sensitive", {}).get("sensitive_columns", [])
+        )
+        
+        # Exclude target column if present
+        target = self._pipeline_ctx.get("target_column")
+        if target and target in sensitive_cols:
+            sensitive_cols = [c for c in sensitive_cols if c != target]
+        
+        if len(sensitive_cols) < 2:
+            return  # No pairs possible
+        
+        all_pairs = list(iter_combinations(sensitive_cols, 2))
+        
+        if sensitive_pairs is not None:
+            # Restricted mode: use user-specified pairs directly.
+            # Pairs may reference any dataset column, not just the detected
+            # sensitive columns. Validation against actual column existence
+            # happens later in the fairness tool itself.
+            valid_pairs = [(pair[0], pair[1]) for pair in sensitive_pairs if len(pair) == 2]
+            
+            if valid_pairs:
+                self._pipeline_ctx["selected_pairs"] = valid_pairs
+                self._pipeline_ctx["pair_selection_reasoning"] = (
+                    f"User-specified pairs (restricted mode): {len(valid_pairs)} pair(s) selected."
+                )
+                self._save_pair_selection_to_results(
+                    valid_pairs,
+                    self._pipeline_ctx["pair_selection_reasoning"],
+                    all_pairs,
+                    len(valid_pairs),
+                    mode="restricted"
+                )
+                print(f"  Using user-specified pairs: {[f'{p[0]}+{p[1]}' for p in valid_pairs]}")
+            else:
+                print("  Warning: No valid pairs from user specification, using all pairs")
+                self._pipeline_ctx["selected_pairs"] = all_pairs
+        
+        elif max_pairs is not None:
+            # Auto mode with limit: use agent to select best pairs
+            self._select_best_pairs(max_pairs)
+        
+        else:
+            # Auto mode without limit: use all pairs
+            self._pipeline_ctx["selected_pairs"] = all_pairs
+            self._pipeline_ctx["pair_selection_reasoning"] = (
+                f"All {len(all_pairs)} pairs selected (no limit specified)."
+            )
     
     def _select_best_pairs(self, max_pairs: int) -> None:
         """
         Use the agent to intelligently select the most important pairs
         for intersectional fairness analysis.
         """
-        from itertools import combinations as iter_combinations
         
         results = self.evaluation_results.get("stages", {})
         sensitive_cols = list(
@@ -418,11 +503,20 @@ REASONING:
             self._pipeline_ctx["pair_selection_reasoning"] = f"Automatic selection: first {max_pairs} pairs (fallback)."
             self._save_pair_selection_to_results(selected, self._pipeline_ctx["pair_selection_reasoning"], all_pairs, max_pairs)
     
-    def _save_pair_selection_to_results(self, selected: list, reasoning: str, all_pairs: list, max_pairs: int) -> None:
-        """Save pair selection info to evaluation results for the report."""
+    def _save_pair_selection_to_results(self, selected: list, reasoning: str, all_pairs: list, max_pairs: int, mode: str = "auto") -> None:
+        """Save pair selection info to evaluation results for the report.
+        
+        Args:
+            selected: List of selected pairs.
+            reasoning: Explanation for why these pairs were selected.
+            all_pairs: All possible pairs from detected sensitive columns.
+            max_pairs: The max_pairs limit that was applied.
+            mode: Selection mode - "auto" (agent-selected) or "restricted" (user-specified).
+        """
         # Update the sensitive stage results with pair selection info
         if "3_sensitive" in self.evaluation_results.get("stages", {}):
             self.evaluation_results["stages"]["3_sensitive"]["pair_selection"] = {
+                "mode": mode,
                 "max_pairs_limit": max_pairs,
                 "total_possible_pairs": len(all_pairs),
                 "selected_pairs": [f"{p[0]} + {p[1]}" for p in selected],
@@ -488,11 +582,6 @@ REASONING:
         print(f"JSON data saved: {json_path}")
         
         self._save_fairness_comparison_files()
-        
-        # Create a backup copy of the report in the same folder
-        backup_path = os.path.join(self.report_dir, "evaluation_report_backup.md")
-        shutil.copy2(md_path, backup_path)
-        print(f"Report backup saved: {backup_path}")
         
         # Generate and save PDF inside the report folder
         try:

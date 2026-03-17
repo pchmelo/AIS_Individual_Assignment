@@ -89,7 +89,7 @@ def _apply_single_mitigation(
     dataset_name = ctx["dataset_name"]
     target_column = ctx["target_column"]
 
-    output_dir = os.path.join(ctx["report_dir"], "generated_csv")
+    output_dir = os.path.join(ctx["report_dir"], "mitigation")
     os.makedirs(output_dir, exist_ok=True)
 
     shared = dict(dataset_name=dataset_name, target_column=target_column, output_dir=output_dir)

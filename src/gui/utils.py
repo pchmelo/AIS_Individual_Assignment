@@ -10,7 +10,15 @@ SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def get_available_datasets() -> list:
-    """Return list of CSV filenames in the data/ directory."""
+    """Return dataset list available in the GUI.
+
+    When FAIRNESS_DATASET_PATH is set (via launch(dataset_path=...)) only that
+    single dataset is returned — the bundled development datasets are hidden.
+    """
+    env_dataset = os.environ.get("FAIRNESS_DATASET_PATH", "")
+    if env_dataset and os.path.exists(env_dataset):
+        return [os.path.basename(env_dataset)]
+    # Development fallback: datasets bundled in src/data/
     data_dir = os.path.join(SRC_DIR, "data")
     if os.path.exists(data_dir):
         return [f for f in os.listdir(data_dir) if f.endswith(".csv")]
@@ -38,8 +46,12 @@ def upload_dataset(uploaded_file) -> str:
 def get_dataset_columns(dataset_name: str) -> list:
     """Read only the header row and return column names."""
     try:
-        data_dir = os.path.join(SRC_DIR, "data")
-        file_path = os.path.join(data_dir, dataset_name)
+        env_dataset = os.environ.get("FAIRNESS_DATASET_PATH", "")
+        if env_dataset and os.path.exists(env_dataset) and os.path.basename(env_dataset) == dataset_name:
+            file_path = env_dataset
+        else:
+            data_dir = os.path.join(SRC_DIR, "data")
+            file_path = os.path.join(data_dir, dataset_name)
         df = pd.read_csv(file_path, nrows=1)
         return list(df.columns)
     except Exception as e:

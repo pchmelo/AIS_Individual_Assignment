@@ -1,0 +1,4 @@
+# GUI dependencies (includes all core dependencies)
+# Install with: pip install -r requirements-gui.txt
+-r requirements.txt
+streamlit==1.52.2

@@ -14,6 +14,22 @@ Detect protected / sensitive columns using an LLM.
 class SensitiveDetectionStage(BaseStageExecutor):
 
     def __call__(self, stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
+        # Check if user pre-specified sensitive columns (restricted mode)
+        confirmed_sensitive = ctx.get("confirmed_sensitive_columns")
+        if confirmed_sensitive:
+            # Skip LLM detection, use user-specified columns directly
+            return {
+                "tool_used": "user_specified",
+                "tool_result": {"status": "restricted_mode"},
+                "simplified_summary": f"User-specified sensitive columns: {', '.join(confirmed_sensitive)}",
+                "agent_analysis": (
+                    f"Using user-specified sensitive attributes (restricted mode):\n"
+                    f"Columns: {', '.join(confirmed_sensitive)}\n\n"
+                    "These columns were explicitly configured for fairness analysis."
+                ),
+                "sensitive_columns": list(confirmed_sensitive),
+            }
+        
         columns_result = ctx["fairness_tools"].detect_sensitive_attributes(
             ctx["dataset_name"],
         )

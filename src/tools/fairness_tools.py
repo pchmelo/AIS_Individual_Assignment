@@ -241,7 +241,14 @@ class FairnessTools(ToolManager):
     def _resolve_path(self, dataset_name: str) -> str:
         if dataset_name.endswith('.csv'):
             dataset_name = dataset_name[:-4]
-        
+
+        # When the GUI is launched with a user-supplied dataset, honour that path.
+        env_dataset = os.environ.get("FAIRNESS_DATASET_PATH", "")
+        if env_dataset and os.path.exists(env_dataset):
+            env_stem = os.path.splitext(os.path.basename(env_dataset))[0]
+            if dataset_name == env_stem or dataset_name == os.path.basename(env_dataset):
+                return env_dataset
+
         possible_paths = [
             os.path.join(self.data_dir, f"{dataset_name}.csv"),
             os.path.join(self.data_dir, dataset_name), 

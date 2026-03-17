@@ -1,8 +1,7 @@
-from cli.evaluator import FairnessEvaluator, EvaluationResult, VerificationResult, create_evaluator
+from cli.evaluator import FairnessEvaluator, EvaluationResult, VerificationResult
 
 __all__ = [
     "FairnessEvaluator",
-    "EvaluationResult", 
+    "EvaluationResult",
     "VerificationResult",
-    "create_evaluator",
 ]

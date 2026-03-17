@@ -192,10 +192,37 @@ pipeline:
 # -----------------------------------------------------------------------------
 # Fine-tune evaluation behavior.
 
-evaluation:
-  # Maximum number of sensitive attribute pairs to analyze for intersectional
-  # fairness. When set, the agent will intelligently select the most important
-  # pairs based on potential fairness concerns (e.g., Sex+Race, Age+Education).
-  # Set to null or remove to analyze all possible pairs.
-  # The reasoning for pair selection is saved in the evaluation results.
-  max_pairs: 2  # Recommended: 2-5 for faster evaluation, null for comprehensive
+# How to launch the application via python example_usage.py.
+#   gui   - Streamlit web interface (requires: pip install -r requirements-gui.txt)
+#   quick - Headless evaluation driven by the settings in this file
+mode: quick
+
+dataset: "adult-all.csv"   # Default dataset shown in the GUI (file must exist in src/data/)
+
+target_column: "Income"  # The target variable for analysis (change as needed)
+
+sensitive_attribute_analysis:
+  # Type options:
+  #   - auto: The agent will automatically detect which sensitive attributes to 
+  #           analyze based on potential fairness concerns and dataset characteristics.
+  #   - restricted: Analyze only the specific attributes listed below.
+  type: restricted
+  # Only used when type is "restricted". List the column names to analyze:
+  attributes: ["Sex", "Race", "Age"]
+
+pair_evaluation:
+  # Type options:
+  #   - auto: The agent will automatically select which sensitive attribute pairs 
+  #           to analyze based on potential fairness concerns (limited by max_pairs).
+  #   - restricted: Analyze only the specific pairs listed below.
+  type: restricted
+  # Maximum number of pairs when type is "auto". Set to null for all pairs.
+  #max_pairs: 2
+  # Only used when type is "restricted". List the pairs to analyze:
+  # Pairs can reference ANY column in the dataset, not just the sensitive attributes above.
+  pairs: [["Sex", "Race"], ["Age", "Education"]]
+
+mitigation_techniques:
+  # List of bias mitigation techniques to apply during the mitigation stage.
+  # Options include: "reweighting", "resampling", "adversarial_debiasing", "preprocessing", "inprocessing", "postprocessing"
+  techniques: ["reweighting", "resampling"]

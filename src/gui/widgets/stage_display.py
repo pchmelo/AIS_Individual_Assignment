@@ -94,9 +94,13 @@ def display_stage_results(stage_key: str, stage_result: dict):
     # ------------------------------------------------------------------
     # Recommendations
     # ------------------------------------------------------------------
-    if stage_key == "5_recommendations" and "recommendations" in stage_result:
+    if stage_key == "5_recommendations":
+        rec_text = stage_result.get("recommendations") or ""
         with st.expander("Recommendations", expanded=True):
-            st.markdown(stage_result["recommendations"])
+            if rec_text.strip():
+                st.markdown(rec_text)
+            else:
+                st.info("No recommendations were generated.")
 
     # ------------------------------------------------------------------
     # Agent analysis

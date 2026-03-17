@@ -20,6 +20,16 @@
 #   local       -> model, device (optional), dtype (optional)
 
 
+# -----------------------------------------------------------------------------
+# Mode
+# -----------------------------------------------------------------------------
+# How to launch the application via python main.py.
+#   gui  - Streamlit web interface (requires: pip install -r requirements-gui.txt)
+#   cli  - Command-line interface
+#   quick - Quick headless evaluation with defaults
+mode: gui
+
+
 default_model: step-3.5-flash  # default model for agents that don't specify one explicitly
 
 models:

@@ -34,7 +34,7 @@ def main(args: argparse.Namespace = None) -> int:
     
     # Verify mode
     if args.verify:
-        result = evaluator.verify(test_prompt=args.test_api)
+        result = evaluator.verify()
         return 0 if result.success else 1
     
     # Evaluate mode - requires data
@@ -90,7 +90,7 @@ Examples:
   python -m cli --data adult-all.csv --target Income
 
   # Verify configuration
-  python -m cli --verify --test-api
+  python -m cli --verify
 
   # Custom config and output
   python -m cli --config my_config.yml --data data.csv --output ./reports
@@ -173,12 +173,6 @@ Environment Variables:
         "--verify", "-V",
         action="store_true",
         help="Verify configuration only (don't run evaluation)",
-    )
-    
-    parser.add_argument(
-        "--test-api",
-        action="store_true",
-        help="Test API connectivity during verification",
     )
     
     parser.add_argument(

@@ -12,6 +12,8 @@ from gui.config import (
     get_config_path,
     get_available_models,
     get_default_model_name,
+    get_default_dataset,
+    get_default_target_column,
     validate_api_keys,
 )
 from gui.utils import (
@@ -49,7 +51,9 @@ def new_evaluation_page():
             st.success(f"Uploaded: {dataset_name}")
             datasets = get_available_datasets()
 
-        selected_dataset = st.selectbox("Select dataset", datasets)
+        default_ds = get_default_dataset()
+        default_ds_idx = datasets.index(default_ds) if default_ds in datasets else 0
+        selected_dataset = st.selectbox("Select dataset", datasets, index=default_ds_idx)
         st.session_state.dataset_name = selected_dataset
 
         # ---- Model selection ----
@@ -91,12 +95,19 @@ def new_evaluation_page():
 
         # ---- Target column ----
         st.markdown("#### Target Column (Optional)")
-        use_target = st.checkbox("Specify target column for fairness analysis")
+        cfg_target = get_default_target_column()
+        use_target = st.checkbox(
+            "Specify target column for fairness analysis",
+            value=bool(cfg_target),
+        )
 
         if use_target and selected_dataset:
             columns = get_dataset_columns(selected_dataset)
             if columns:
-                st.session_state.target_column = st.selectbox("Select target column:", columns)
+                target_idx = columns.index(cfg_target) if cfg_target in columns else 0
+                st.session_state.target_column = st.selectbox(
+                    "Select target column:", columns, index=target_idx
+                )
             else:
                 st.warning("Could not read dataset columns")
                 st.session_state.target_column = None
@@ -308,15 +319,17 @@ def _render_chat_interface():
 
 
 def _render_input_area(pipeline):
-    """Text input + action selector + send button."""
+    """Text input + action selector + send button, with inline stage controls."""
 
     cur = pipeline.current_stage
     if cur and not pipeline.is_finished:
-        st.caption(f"Next stage: **{cur.name}** -- {cur.description}")
+        st.caption(f"Next stage: **{cur.name}** — {cur.description}")
     elif pipeline.is_finished:
-        st.caption(
-            "Pipeline finished. You can **Repeat** a stage or **Backward** to revisit."
-        )
+        st.caption("Pipeline finished. You can **Repeat** a stage or **Backward** to revisit.")
+
+    # ---- Inline controls for stages that need human guidance ----
+    if cur and not pipeline.is_finished:
+        _render_stage_controls(pipeline, cur)
 
     # Determine available actions based on pipeline state
     if pipeline.is_finished:
@@ -347,6 +360,85 @@ def _render_input_area(pipeline):
 
     if submitted:
         _handle_submit(pipeline, user_text, action_choice)
+
+
+def _render_stage_controls(pipeline, stage):
+    """Render inline controls for stages that benefit from human guidance."""
+
+    dataset_name = st.session_state.get("dataset_name", "")
+    columns = get_dataset_columns(dataset_name) if dataset_name else []
+
+    # ------------------------------------------------------------------
+    # Stage 3 — Sensitive Attribute Detection
+    # ------------------------------------------------------------------
+    if stage.key == "3_sensitive":
+        with st.expander("Sensitive Attribute Detection — configure before running", expanded=True):
+            st.caption("Auto: the agent detects sensitive columns. Restricted: you choose which columns to analyse.")
+            mode = st.radio(
+                "Mode",
+                ["auto", "restricted"],
+                index=0,
+                horizontal=True,
+                key="inline_sens_mode",
+            )
+            if mode == "restricted" and columns:
+                st.multiselect(
+                    "Sensitive attributes to analyse:",
+                    options=columns,
+                    default=[],
+                    key="inline_sens_cols",
+                )
+            # Persist choices so _handle_submit can read them
+            st.session_state["_stage3_mode"] = mode
+
+    # ------------------------------------------------------------------
+    # Stage 4.5 — Intersectional Pair Evaluation
+    # ------------------------------------------------------------------
+    elif stage.key == "4_5_target_fairness":
+        # Detected sensitive columns from previous stage result
+        sens = (
+            pipeline.evaluation_results.get("stages", {})
+            .get("3_sensitive", {})
+            .get("sensitive_columns", [])
+        )
+        all_cols = columns or sens
+        with st.expander("Intersectional Pair Evaluation — configure before running", expanded=True):
+            st.caption("Auto: the agent selects pairs (optionally capped). Restricted: you define exact pairs.")
+            mode = st.radio(
+                "Mode",
+                ["auto", "restricted"],
+                index=0,
+                horizontal=True,
+                key="inline_pair_mode",
+            )
+            if mode == "auto":
+                use_cap = st.checkbox("Cap number of pairs", value=False, key="inline_use_max_pairs")
+                if use_cap:
+                    st.number_input("Max pairs:", min_value=1, max_value=50, value=2, step=1, key="inline_max_pairs")
+            else:
+                if all_cols and len(all_cols) >= 2:
+                    n = st.number_input("Number of pairs:", min_value=1, max_value=20, value=1, step=1, key="inline_num_pairs")
+                    for i in range(int(n)):
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.selectbox(f"Pair {i+1} — Col 1:", [""] + all_cols, key=f"inline_pair_{i}_a1")
+                        with c2:
+                            st.selectbox(f"Pair {i+1} — Col 2:", [""] + all_cols, key=f"inline_pair_{i}_a2")
+                else:
+                    st.info("No columns available to build pairs from.")
+            st.session_state["_stage45_mode"] = mode
+
+    # ------------------------------------------------------------------
+    # Stage 6 — Bias Mitigation
+    # ------------------------------------------------------------------
+    elif stage.key == "6_bias_mitigation":
+        mit_cfg = pipeline._pipeline_ctx.get("mitigation_config") or {}
+        preconfigured = list(mit_cfg.get("methods", {}).keys())
+        with st.expander("Bias Mitigation — configure before running", expanded=True):
+            st.caption("Select techniques to apply. Leave all unchecked to skip mitigation.")
+            _options = ["Reweighting", "SMOTE", "Random Oversampling", "Random Undersampling"]
+            for opt in _options:
+                st.checkbox(opt, value=(opt in preconfigured), key=f"inline_mit_{opt}")
 
 
 def _handle_submit(pipeline, user_text, action_choice):
@@ -384,13 +476,16 @@ def _handle_submit(pipeline, user_text, action_choice):
     # Apply session-state overrides to the pipeline context
     if cur_stage:
         if st.session_state.confirmed_sensitive_columns:
-            pipeline.pipeline_ctx["confirmed_sensitive_columns"] = (
+            pipeline._pipeline_ctx["confirmed_sensitive_columns"] = (
                 st.session_state.confirmed_sensitive_columns
             )
         if st.session_state.ml_config:
-            pipeline.pipeline_ctx["ml_config"] = st.session_state.ml_config
+            pipeline._pipeline_ctx["ml_config"] = st.session_state.ml_config
 
-        # Parse user text for special stage instructions
+        # Apply inline stage controls
+        _apply_inline_stage_controls(pipeline, cur_stage)
+
+        # Parse user text for special stage instructions (free-form override)
         _apply_user_text_overrides(pipeline, cur_stage, user_text)
 
     try:
@@ -450,6 +545,60 @@ def _handle_submit(pipeline, user_text, action_choice):
         )
 
     st.rerun()
+
+
+# ======================================================================
+# Inline stage control application
+# ======================================================================
+
+def _apply_inline_stage_controls(pipeline, stage):
+    """Read inline widget values and apply them to pipeline context."""
+    ss = st.session_state
+
+    # Stage 3 — sensitive attribute detection
+    if stage.key == "3_sensitive":
+        mode = ss.get("_stage3_mode", "auto")
+        if mode == "restricted":
+            cols = ss.get("inline_sens_cols", [])
+            if cols:
+                pipeline._pipeline_ctx["confirmed_sensitive_columns"] = cols
+
+    # Stage 4.5 — pair evaluation
+    elif stage.key == "4_5_target_fairness":
+        mode = ss.get("_stage45_mode", "auto")
+        if mode == "auto":
+            # Always reset selected_pairs so pair selection re-runs with the
+            # latest cap (pair selection happened after stage 3 before the user
+            # had a chance to configure this control).
+            pipeline._pipeline_ctx["selected_pairs"] = None
+            if ss.get("inline_use_max_pairs"):
+                max_p = int(ss.get("inline_max_pairs", 2))
+                pipeline._pipeline_ctx["max_pairs"] = max_p
+                pipeline._handle_pair_selection(None, max_p)
+            else:
+                pipeline._pipeline_ctx["max_pairs"] = None
+                pipeline._handle_pair_selection(None, None)
+        else:
+            n = int(ss.get("inline_num_pairs", 1))
+            pairs = []
+            for i in range(n):
+                a1 = ss.get(f"inline_pair_{i}_a1", "")
+                a2 = ss.get(f"inline_pair_{i}_a2", "")
+                if a1 and a2 and a1 != a2:
+                    pairs.append((a1, a2))
+            if pairs:
+                pipeline._pipeline_ctx["selected_pairs"] = pairs
+                pipeline._pipeline_ctx["user_specified_pairs"] = pairs
+
+    # Stage 6 — bias mitigation
+    elif stage.key == "6_bias_mitigation":
+        _options = ["Reweighting", "SMOTE", "Random Oversampling", "Random Undersampling"]
+        chosen = {opt: {} for opt in _options if ss.get(f"inline_mit_{opt}", False)}
+        if chosen:
+            pipeline._pipeline_ctx["mitigation_config"] = {"methods": chosen}
+        else:
+            # If nothing checked AND nothing was pre-configured, leave as-is (skip)
+            pipeline._pipeline_ctx.setdefault("mitigation_config", None)
 
 
 # ======================================================================
@@ -513,21 +662,14 @@ def _apply_user_text_overrides(pipeline, stage, user_text):
 # ======================================================================
 
 def _get_confirmation_hint(stage, pipeline):
-    """Return a helpful prompt for stages that need user confirmation."""
+    """Return a helpful prompt shown after the previous stage completes."""
 
-    if stage.key == "4_imbalance":
-        sens = (
-            pipeline.evaluation_results.get("stages", {})
-            .get("3_sensitive", {})
-            .get("sensitive_columns", [])
+    if stage.key == "3_sensitive":
+        return (
+            "**Next: Sensitive Attribute Detection**\n\n"
+            "Use the panel above the input to choose *auto* (agent detects columns) "
+            "or *restricted* (you pick the columns), then press **Forward**."
         )
-        if sens:
-            return (
-                f"**Stage 3 detected these sensitive columns:** {', '.join(sens)}\n\n"
-                "These columns will be used for imbalance and fairness analysis.\n\n"
-                "- **Override:** Type different column names (comma-separated) to replace the detected columns\n"
-                "- **Accept:** Press **Forward** to continue with the detected columns"
-            )
 
     if stage.key == "4_5_target_fairness":
         sens = (
@@ -535,23 +677,21 @@ def _get_confirmation_hint(stage, pipeline):
             .get("3_sensitive", {})
             .get("sensitive_columns", [])
         )
-        if len(sens) >= 2:
-            pairs = list(combinations(sens, 2))
-            pairs_str = ", ".join(f"{a}+{b}" for a, b in pairs)
-            return (
-                f"**Target Fairness Analysis** can examine these attribute pairs:\n"
-                f"{pairs_str}\n\n"
-                "- Type the pairs you want (e.g. `Sex+Race, Age+Education`)\n"
-                "- Type `none` to skip intersectional analysis\n"
-                "- Or press **Forward** to analyse all pairs."
-            )
+        pairs_str = ", ".join(f"{a}+{b}" for a, b in combinations(sens, 2)) if len(sens) >= 2 else "—"
+        return (
+            f"**Next: Target Fairness Analysis**\n\n"
+            f"Detected sensitive columns: {', '.join(sens) if sens else '—'}\n\n"
+            f"Possible pairs: {pairs_str}\n\n"
+            "Use the panel above to configure pair selection (auto with optional cap, "
+            "or restricted to specific pairs), then press **Forward**."
+        )
 
     if stage.key == "6_bias_mitigation":
         return (
-            "**Bias Mitigation** -- choose which techniques to apply.\n\n"
-            "Options: `Reweighting`, `SMOTE`, `Random Oversampling`, "
-            "`Random Undersampling`\n\n"
-            "Type your choices (comma-separated) or press **Forward** to skip."
+            "**Next: Bias Mitigation**\n\n"
+            "Use the panel above to select which mitigation techniques to apply "
+            "(Reweighting, SMOTE, oversampling / undersampling). "
+            "Leave all unchecked to skip mitigation entirely, then press **Forward**."
         )
 
     return ""

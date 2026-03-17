@@ -3,42 +3,49 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from cli import FairnessEvaluator
+from dotenv import load_dotenv
 
-# =============================================================================
-# Configuration
-# =============================================================================
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yml")
+# Load API keys from .env before anything else
+load_dotenv()
+
+# Paths (relative to this file)
+CONFIG_PATH  = os.path.join(os.path.dirname(__file__), "config.yml")
 DATASET_PATH = os.path.join(os.path.dirname(__file__), "adult-all.csv")
 
-# Load API key (Option 1: Direct assignment - not recommended for production) or (Option 2: Load from .env file)
-from dotenv import load_dotenv
-load_dotenv()
-API_KEY = os.getenv("OPENROUTER_API_KEY")  # Get free key at https://openrouter.ai/keys
+# ---------------------------------------------------------------------------
+# Mode dispatch  —  controlled by  mode:  in config.yml
+# ---------------------------------------------------------------------------
+import yaml
+with open(CONFIG_PATH, encoding="utf-8") as f:
+    _mode = (yaml.safe_load(f) or {}).get("mode", "quick")
 
-# =============================================================================
-# Initialize Evaluator
-# =============================================================================
-evaluator = FairnessEvaluator(
-    config_path=CONFIG_PATH,
-    api_key=API_KEY,
-)
+if _mode == "gui":
+    # Requires: pip install -r requirements-gui.txt
+    from gui import launch
+    launch(config_path=CONFIG_PATH, dataset_path=DATASET_PATH)
+    sys.exit(0)
 
-# =============================================================================
-# Run Diagnostic Checks (recommended before first evaluation)
-# =============================================================================
-# Uncomment to run diagnostics:
-# check = evaluator.doctor(dataset=DATASET_PATH)
-# if not check.all_passed:
-#     print("Fix the issues above before running evaluation.")
-#     exit(1)
+# ---------------------------------------------------------------------------
+# CLI / headless mode
+# ---------------------------------------------------------------------------
+from cli import FairnessEvaluator
 
-# =============================================================================
-# Run Evaluation
-# =============================================================================
+evaluator = FairnessEvaluator(config_path=CONFIG_PATH)
+
+# All settings (target column, sensitive attributes, pairs, mitigation) are
+# read from config.yml automatically. Override any of them here if needed:
 result = evaluator.evaluate(
     data=DATASET_PATH,
-    target="Income",
+    # target="Income",                              # overrides target_column in config
+    # sensitive_columns=["Sex", "Race", "Age"],     # overrides sensitive_attribute_analysis
+    # sensitive_pairs=[["Sex", "Race"], ["Age", "Education"]],  # overrides pair_evaluation
+    # max_pairs=3,                                  # cap auto-selected pairs
+    # mitigation_techniques=["reweighting", "smote"],           # overrides mitigation_techniques
 )
 
-print(result.pdf_path if result.success else result.error)
+if result.success:
+    print(f"\nReport: {result.report_dir}")
+    if result.pdf_path:
+        print(f"PDF:    {result.pdf_path}")
+else:
+    print(f"\nError: {result.error}")

@@ -132,6 +132,10 @@ class BiasMitigationTools(ToolManager):
     def _resolve_path(self, dataset_name: str) -> str:
         if not dataset_name.endswith('.csv'):
             dataset_name += '.csv'
+        # When the GUI is launched with a user-supplied dataset, honour that path.
+        env_dataset = os.environ.get("FAIRNESS_DATASET_PATH", "")
+        if env_dataset and os.path.exists(env_dataset) and os.path.basename(env_dataset) == dataset_name:
+            return env_dataset
         return os.path.join(self.data_dir, dataset_name)
     
     def apply_reweighting(self, dataset_name: str, target_column: str, 
