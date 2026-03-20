@@ -12,8 +12,10 @@ from gui.config import (
     get_config_path,
     get_available_models,
     get_default_model_name,
-    get_default_dataset,
     get_default_target_column,
+    get_default_ml_model,
+    get_default_ml_model_params,
+    get_default_dataset,
     validate_api_keys,
 )
 from gui.utils import (
@@ -113,6 +115,46 @@ def new_evaluation_page():
                 st.session_state.target_column = None
         else:
             st.session_state.target_column = None
+
+        # ---- ML Model Type ----
+        st.markdown("#### ML Model Type")
+        ml_models = ["Random Forest", "Gradient Boosting", "Logistic Regression", "SVC"]
+        cfg_ml_model = get_default_ml_model()
+        ml_idx = ml_models.index(cfg_ml_model) if cfg_ml_model in ml_models else 0
+        st.session_state.ml_model_type = st.selectbox(
+            "Select ML Model for Analysis:", 
+            ml_models, 
+            index=ml_idx
+        )
+
+        cfg_params = get_default_ml_model_params()
+        default_params = cfg_params.get(st.session_state.ml_model_type, {})
+        
+        st.markdown("##### Model Parameters")
+        st.session_state.ml_model_params = {}
+        
+        if st.session_state.ml_model_type == "Random Forest":
+            st.session_state.ml_model_params["n_estimators"] = st.number_input("n_estimators", min_value=1, value=default_params.get("n_estimators", 100))
+            max_depth_val = default_params.get("max_depth")
+            use_max_depth = st.checkbox("Set max_depth", value=max_depth_val is not None)
+            if use_max_depth:
+                st.session_state.ml_model_params["max_depth"] = st.number_input("max_depth", min_value=1, value=max_depth_val or 10)
+            else:
+                st.session_state.ml_model_params["max_depth"] = None
+                
+        elif st.session_state.ml_model_type == "Gradient Boosting":
+            st.session_state.ml_model_params["n_estimators"] = st.number_input("n_estimators", min_value=1, value=default_params.get("n_estimators", 100))
+            st.session_state.ml_model_params["learning_rate"] = st.number_input("learning_rate", min_value=0.01, value=default_params.get("learning_rate", 0.1))
+            st.session_state.ml_model_params["max_depth"] = st.number_input("max_depth", min_value=1, value=default_params.get("max_depth", 3))
+            
+        elif st.session_state.ml_model_type == "Logistic Regression":
+            st.session_state.ml_model_params["C"] = st.number_input("C (Inverse of regularization)", min_value=0.01, value=default_params.get("C", 1.0))
+            st.session_state.ml_model_params["penalty"] = st.selectbox("penalty", ["l2", "none"], index=0 if default_params.get("penalty", "l2") == "l2" else 1)
+            
+        elif st.session_state.ml_model_type == "SVC":
+            st.session_state.ml_model_params["C"] = st.number_input("C (Regularization)", min_value=0.01, value=default_params.get("C", 1.0))
+            kernel_list = ["rbf", "linear", "poly", "sigmoid"]
+            st.session_state.ml_model_params["kernel"] = st.selectbox("kernel", kernel_list, index=kernel_list.index(default_params.get("kernel", "rbf")))
 
         st.markdown("---")
 
@@ -479,7 +521,13 @@ def _handle_submit(pipeline, user_text, action_choice):
             pipeline._pipeline_ctx["confirmed_sensitive_columns"] = (
                 st.session_state.confirmed_sensitive_columns
             )
-        if st.session_state.ml_config:
+        if hasattr(st.session_state, "ml_model_type") and st.session_state.ml_model_type:
+            pipeline._pipeline_ctx["ml_config"] = {
+                "enabled": True, 
+                "model_type": st.session_state.ml_model_type,
+                "model_params": st.session_state.get("ml_model_params", {})
+            }
+        elif hasattr(st.session_state, "ml_config") and st.session_state.ml_config:
             pipeline._pipeline_ctx["ml_config"] = st.session_state.ml_config
 
         # Apply inline stage controls
@@ -706,10 +754,10 @@ def _reset_state():
     st.session_state.mode = None
     st.session_state.pipeline = None
     st.session_state.pipeline_started = False
-    st.session_state.evaluation_results = None
-    st.session_state.chat_messages = []
     st.session_state.confirmed_sensitive_columns = None
     st.session_state.ml_config = {"enabled": False}
+    st.session_state.ml_model_type = "Random Forest"
+    st.session_state.ml_model_params = {}
 
 
 def _stop_and_generate_report():

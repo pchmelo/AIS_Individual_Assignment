@@ -879,6 +879,7 @@ class FairnessTools(ToolManager):
             result = {
                 "status": "success",
                 "model_type": model_type,
+                "model_params": model_params,
                 "test_size": test_size,
                 "dataset_size": len(df),
                 "test_samples": len(y_test),

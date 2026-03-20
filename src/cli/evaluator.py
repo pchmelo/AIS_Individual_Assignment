@@ -13,6 +13,7 @@ from models.agents.base_agent import APIError
 
 import pandas as pd
 from pipeline.pipeline import DatasetEvaluationPipeline
+from pipeline.utils import TECHNIQUE_DISPLAY
 
 
 # Add src to path for imports when running as standalone
@@ -289,17 +290,6 @@ class FairnessEvaluator:
                 os.makedirs(expected_path.parent, exist_ok=True)
                 shutil.copy2(data_path, expected_path)
         
-        # Build objective prompt
-        if objective is None:
-            target_str = f"Target: {target}. " if target else ""
-            objective = (
-                f"Evaluate the dataset '{dataset_name}' for data quality and fairness issues. "
-                f"{target_str}Provide a detailed report highlighting any problems found and suggestions for improvement."
-            )
-        
-        if self.verbose:
-            print(f"\nEvaluating '{dataset_name}' (target: {target or 'auto-detect'})")
-        
         try:
             # Load evaluation config directly from YAML file
             cfg: Dict[str, Any] = {}
@@ -312,6 +302,17 @@ class FairnessEvaluator:
                 target = cfg.get("target_column") or None
                 if self.verbose and target:
                     print(f"Using target column from config: {target}")
+            
+            # Build objective prompt AFTER target fallback
+            if objective is None:
+                target_str = f"Target: {target}. " if target else ""
+                objective = (
+                    f"Evaluate the dataset '{dataset_name}' for data quality and fairness issues. "
+                    f"{target_str}Provide a detailed report highlighting any problems found and suggestions for improvement."
+                )
+        
+            if self.verbose:
+                print(f"\nEvaluating '{dataset_name}' (target: {target or 'auto-detect'})")
             
             # Handle sensitive attribute analysis configuration
             sens_attr_config = cfg.get("sensitive_attribute_analysis", {})
@@ -336,13 +337,6 @@ class FairnessEvaluator:
                 max_pairs = pair_config.get("max_pairs")
             
             # Handle mitigation techniques configuration
-            _TECHNIQUE_DISPLAY = {
-                "reweighting": "Reweighting",
-                "resampling": "SMOTE",
-                "smote": "SMOTE",
-                "oversampling": "Random Oversampling",
-                "undersampling": "Random Undersampling",
-            }
             final_mitigation_config = None
             techniques = mitigation_techniques
             if techniques is None:
@@ -351,7 +345,7 @@ class FairnessEvaluator:
             if techniques:
                 methods = {}
                 for t in techniques:
-                    display = _TECHNIQUE_DISPLAY.get(t.lower())
+                    display = TECHNIQUE_DISPLAY.get(t.lower())
                     if display:
                         methods[display] = {}
                     else:
@@ -361,12 +355,25 @@ class FairnessEvaluator:
                     if self.verbose:
                         print(f"Applying mitigation: {list(methods.keys())}")
             
+            final_ml_config = ml_config
+            if final_ml_config is None:
+                ml_eval_cfg = cfg.get("ml_evaluation", {})
+                if ml_eval_cfg:
+                    m_type = ml_eval_cfg.get("model_type", "Random Forest")
+                    m_params = ml_eval_cfg.get("model_params", {}).get(m_type, {})
+                    final_ml_config = {
+                        "enabled": True,
+                        "model_type": m_type,
+                        "model_params": m_params,
+                        "test_size": ml_eval_cfg.get("test_size", 0.25)
+                    }
+                    
             # Run the pipeline
             self._pipeline.evaluate_dataset(
                 user_prompt=objective,
                 confirmed_sensitive=sensitive_columns,
                 sensitive_pairs=final_sensitive_pairs,
-                ml_config=ml_config,
+                ml_config=final_ml_config,
                 max_pairs=max_pairs,
                 mitigation_config=final_mitigation_config,
             )

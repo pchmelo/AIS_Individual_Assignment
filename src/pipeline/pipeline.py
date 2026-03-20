@@ -20,6 +20,14 @@ from tools.bias_mitigation_tools import BiasMitigationTools
 from pipeline.stage import Stage, NavigationAction
 from pipeline.config import EVALUATION_STAGES, load_pipeline_config
 from pipeline.stages.base import safe_json_dumps
+from pipeline.utils import (
+    format_mitigation_markdown, 
+    format_pair_selection_markdown,
+    generate_markdown_report,
+    generate_json_data,
+    save_fairness_comparison_files
+)
+from pipeline.stages.pair_selection import build_pair_selection_prompt, parse_pair_selection_response
 
 from gui.pdf_generator import generate_pdf_bytes
 
@@ -314,10 +322,6 @@ class DatasetEvaluationPipeline:
             current_num += 1
             print(f"[{current_num}/{total_stages}] {stage.name}")
             self.navigate(NavigationAction.FORWARD)
-            
-            # After sensitive attribute detection, handle pair selection
-            if stage.key == "3_sensitive":
-                self._handle_pair_selection(sensitive_pairs, max_pairs)
 
         print("Done.")
 
@@ -415,80 +419,17 @@ class DatasetEvaluationPipeline:
         # Ask agent to select best pairs
         print(f"  Selecting {max_pairs} most important pairs from {len(all_pairs)} possible...")
         
-        pair_list_str = "\n".join([f"  - {p[0]} + {p[1]}" for p in all_pairs])
-        
-        prompt = f"""You are analyzing a dataset for fairness. The following sensitive attributes were detected:
-{', '.join(sensitive_cols)}
-
-All possible attribute pairs for intersectional analysis ({len(all_pairs)} total):
-{pair_list_str}
-
-Select exactly {max_pairs} pairs that are MOST IMPORTANT for fairness analysis. Consider:
-1. Historical discrimination patterns (e.g., Race+Sex, Age+Gender are commonly studied)
-2. Potential for intersectional bias (combinations that may compound disadvantage)
-3. Relevance to employment/lending/healthcare fairness (depending on context)
-4. Statistical significance (pairs that likely have enough data points)
-
-Respond in this EXACT format:
-SELECTED_PAIRS:
-- Attribute1 + Attribute2
-- Attribute3 + Attribute4
-
-REASONING:
-<Your explanation of why these pairs were selected>"""
+        prompt = build_pair_selection_prompt(sensitive_cols, all_pairs, max_pairs)
         
         try:
             response = self.recommendation_agent.run(prompt)
+            selected, reasoning = parse_pair_selection_response(response, all_pairs, max_pairs)
             
-            # Parse selected pairs from response
-            selected = []
-            reasoning = ""
-            lines = response.strip().split("\n")
-            in_pairs = False
-            in_reasoning = False
-            reasoning_lines = []
-            
-            for line in lines:
-                line_stripped = line.strip()
-                if "SELECTED_PAIRS:" in line.upper():
-                    in_pairs = True
-                    in_reasoning = False
-                    continue
-                if "REASONING:" in line.upper():
-                    in_pairs = False
-                    in_reasoning = True
-                    continue
-                
-                if in_pairs and line_stripped.startswith("-"):
-                    # Parse "- Attr1 + Attr2" format
-                    pair_str = line_stripped[1:].strip()
-                    if "+" in pair_str:
-                        parts = [p.strip() for p in pair_str.split("+")]
-                        if len(parts) == 2:
-                            # Find matching pair (order-independent)
-                            for p in all_pairs:
-                                if (parts[0] == p[0] and parts[1] == p[1]) or \
-                                   (parts[0] == p[1] and parts[1] == p[0]):
-                                    if p not in selected:
-                                        selected.append(p)
-                                    break
-                
-                if in_reasoning:
-                    reasoning_lines.append(line_stripped)
-            
-            reasoning = " ".join(reasoning_lines).strip()
-            
-            # Validate we got enough pairs
-            if len(selected) < max_pairs:
-                # Fall back to first N pairs if parsing failed
-                print(f"  Warning: Only parsed {len(selected)} pairs, using first {max_pairs}")
-                selected = all_pairs[:max_pairs]
-                reasoning = f"Automatic selection: first {max_pairs} pairs (agent parsing issue)."
-            elif len(selected) > max_pairs:
-                selected = selected[:max_pairs]
+            if not reasoning:
+                reasoning = "Agent selected these pairs based on fairness analysis criteria."
             
             self._pipeline_ctx["selected_pairs"] = selected
-            self._pipeline_ctx["pair_selection_reasoning"] = reasoning or "Agent selected these pairs based on fairness analysis criteria."
+            self._pipeline_ctx["pair_selection_reasoning"] = reasoning
             
             # Save to evaluation results for the report
             self._save_pair_selection_to_results(selected, reasoning, all_pairs, max_pairs)
@@ -498,7 +439,7 @@ REASONING:
         except Exception as e:
             # Fallback: use first N pairs
             print(f"  Warning: Pair selection failed ({e}), using first {max_pairs} pairs")
-            selected = all_pairs[:max_pairs]
+            selected = list(all_pairs[:max_pairs])
             self._pipeline_ctx["selected_pairs"] = selected
             self._pipeline_ctx["pair_selection_reasoning"] = f"Automatic selection: first {max_pairs} pairs (fallback)."
             self._save_pair_selection_to_results(selected, self._pipeline_ctx["pair_selection_reasoning"], all_pairs, max_pairs)
@@ -534,17 +475,17 @@ REASONING:
 
         for word in words:
             if ".csv" in word:
-                return word.strip("'\"").replace(".csv", "")
+                return word.strip("'\"")
 
-        common = ["adult-all", "adult", "census", "credit", "compas", "german", "bank"]
+        common = ["adult-all.csv", "adult-all", "adult", "census", "credit", "compas", "german", "bank"]
         for ds in common:
             if ds in prompt_lower:
-                return ds
+                return ds if ".csv" in ds else f"{ds}.csv"
 
         skip = {"audit", "analyze", "evaluate", "check", "inspect", "dataset", "the", "a", "an", "target"}
         remaining = [w.strip("'\"") for w in words if w.lower() not in skip and len(w) > 2]
         if remaining:
-            return remaining[0].replace(".csv", "")
+            return remaining[0]
         return words[0].strip("'\"") if words else "dataset"
 
     @staticmethod
@@ -571,17 +512,17 @@ REASONING:
         md_path = os.path.join(self.report_dir, "evaluation_report.md")
         json_path = os.path.join(self.report_dir, "stage_data.json")
         
-        md_content = self._generate_markdown_report()
+        md_content = generate_markdown_report(self)
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(md_content)
         print(f"Markdown report saved: {md_path}")
         
-        json_content = self._generate_json_data()
+        json_content = generate_json_data(self)
         with open(json_path, "w", encoding="utf-8") as f:
             f.write(safe_json_dumps(json_content))
         print(f"JSON data saved: {json_path}")
         
-        self._save_fairness_comparison_files()
+        save_fairness_comparison_files(self)
         
         # Generate and save PDF inside the report folder
         try:
@@ -594,217 +535,5 @@ REASONING:
             print(f"Warning: Could not generate PDF: {e}")
         
         return md_content
-
-    def _generate_markdown_report(self) -> str:
-        """Generate pure markdown report (human-readable, easy PDF conversion)."""
-        dataset_hash = hashlib.md5(self.current_dataset.encode()).hexdigest()[:8]
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        lines: List[str] = []
-        lines.append("# Dataset Fairness Evaluation Report")
-        lines.append("")
-        lines.append("## Metadata")
-        lines.append("")
-        lines.append(f"- **Dataset:** {self.current_dataset}")
-        lines.append(f"- **Timestamp:** {ts}")
-        lines.append(f"- **Dataset Hash:** {dataset_hash}")
-        if hasattr(self, "target_column") and self.target_column:
-            lines.append(f"- **Target Column:** {self.target_column}")
-        lines.append(f"- **Objective:** {self.user_objective or 'Dataset auditing'}")
-        lines.append("")
-        lines.append("---")
-        lines.append("")
-        
-        stage_titles = {
-            "0_loading": "Stage 0: Dataset Loading",
-            "1_objective": "Stage 1: Objective Inspection",
-            "2_quality": "Stage 2: Data Quality Analysis",
-            "3_sensitive": "Stage 3: Sensitive Attribute Detection",
-            "4_imbalance": "Stage 4: Imbalance Analysis",
-            "4_5_target_fairness": "Stage 4.5: Target Fairness Analysis",
-            "5_recommendations": "Stage 5: Recommendations",
-            "6_bias_mitigation": "Stage 6: Bias Mitigation",
-        }
-        
-        for stage_key, stage_data in self.evaluation_results["stages"].items():
-            title = stage_titles.get(stage_key, stage_key.replace("_", " ").title())
-            lines.append(f"## {title}")
-            lines.append("")
-            
-            if not isinstance(stage_data, dict):
-                lines.append(str(stage_data))
-                lines.append("")
-                lines.append("---")
-                lines.append("")
-                continue
-            
-            if "tool_used" in stage_data:
-                lines.append(f"**Tool Used:** `{stage_data['tool_used']}`")
-                lines.append("")
-            
-            if stage_key == "6_bias_mitigation" and "methods" in stage_data:
-                self._format_mitigation_markdown(lines, stage_data)
-            elif "agent_analysis" in stage_data:
-                lines.append("### Analysis")
-                lines.append("")
-                lines.append(stage_data["agent_analysis"])
-                lines.append("")
-                
-                # Add pair selection info for sensitive stage
-                if stage_key == "3_sensitive" and "pair_selection" in stage_data:
-                    self._format_pair_selection_markdown(lines, stage_data["pair_selection"])
-                    
-            elif "recommendations" in stage_data:
-                lines.append("### Recommendations")
-                lines.append("")
-                lines.append(stage_data["recommendations"])
-                lines.append("")
-            elif "agent_response" in stage_data:
-                lines.append("### Response")
-                lines.append("")
-                lines.append(str(stage_data["agent_response"]))
-                lines.append("")
-            else:
-                if "objective" in stage_data:
-                    lines.append(f"**Objective:** {stage_data.get('objective', 'N/A')}")
-                    lines.append("")
-                if "validation" in stage_data:
-                    lines.append(f"**Validation:** {stage_data.get('validation', 'N/A')}")
-                    lines.append("")
-            
-            lines.append("---")
-            lines.append("")
-        
-        lines.append("*Report generated by Dataset Fairness Evaluation System*")
-        return "\n".join(lines)
-
-    def _format_mitigation_markdown(self, lines: List[str], stage_data: Dict[str, Any]):
-        """Format bias mitigation section as markdown."""
-        methods_results = stage_data.get("methods", {})
-        applied = stage_data.get("applied_methods", list(methods_results.keys()))
-        
-        lines.append(f"**Status:** {stage_data.get('status', 'unknown')}")
-        lines.append(f"**Applied Methods:** {', '.join(applied)}")
-        lines.append("")
-        
-        for method in applied:
-            mr = methods_results.get(method, {})
-            lines.append(f"### {method.replace('_', ' ').title()}")
-            lines.append("")
-            
-            if mr.get("status") == "error":
-                lines.append(f"**Error:** {mr.get('error', 'Unknown error')}")
-                lines.append("")
-                continue
-            
-            mitigation_result = mr.get("mitigation_result", {})
-            if mitigation_result:
-                lines.append("#### Mitigation Results")
-                lines.append("")
-                if "method" in mitigation_result:
-                    lines.append(f"- **Technique:** {mitigation_result['method']}")
-                if "original_rows" in mitigation_result and "new_rows" in mitigation_result:
-                    orig = mitigation_result["original_rows"]
-                    new = mitigation_result["new_rows"]
-                    change = new - orig
-                    pct = (change / orig * 100) if orig > 0 else 0
-                    lines.append(f"- **Dataset Size:** {orig:,} → {new:,} ({pct:+.1f}%)")
-                if "rows_added" in mitigation_result:
-                    lines.append(f"- **Samples Added:** +{mitigation_result['rows_added']:,}")
-                lines.append("")
-            
-            comparison_result = mr.get("comparison_result") or mitigation_result.get("comparison_result")
-            if comparison_result:
-                imb = comparison_result.get("imbalance_metrics", {})
-                if imb:
-                    lines.append("#### Imbalance Improvement")
-                    lines.append("")
-                    lines.append(f"- **Original Ratio:** {imb.get('original_imbalance_ratio', 'N/A'):.2f}")
-                    lines.append(f"- **Mitigated Ratio:** {imb.get('mitigated_imbalance_ratio', 'N/A'):.2f}")
-                    improvement = imb.get("improvement", "No")
-                    lines.append(f"- **Improved:** {improvement}")
-                    lines.append("")
-                
-                if "agent_analysis" in comparison_result:
-                    lines.append("#### Agent Analysis")
-                    lines.append("")
-                    lines.append(comparison_result["agent_analysis"])
-                    lines.append("")
-
-    def _format_pair_selection_markdown(self, lines: List[str], pair_selection: Dict[str, Any]) -> None:
-        """Format pair selection info as markdown."""
-        lines.append("### Intersectional Pair Selection")
-        lines.append("")
-        lines.append(f"**Max Pairs Limit:** {pair_selection.get('max_pairs_limit', 'N/A')}")
-        lines.append(f"**Total Possible Pairs:** {pair_selection.get('total_possible_pairs', 'N/A')}")
-        lines.append("")
-        lines.append("**Selected Pairs for Analysis:**")
-        for pair in pair_selection.get("selected_pairs", []):
-            lines.append(f"- {pair}")
-        lines.append("")
-        lines.append("**Selection Reasoning:**")
-        lines.append("")
-        lines.append(pair_selection.get("reasoning", "No reasoning provided."))
-        lines.append("")
-
-    def _generate_json_data(self) -> Dict[str, Any]:
-        """Generate JSON file with all tool results organized by stage."""
-        dataset_hash = hashlib.md5(self.current_dataset.encode()).hexdigest()[:8]
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        json_data = {
-            "metadata": {
-                "dataset": self.current_dataset,
-                "timestamp": ts,
-                "dataset_hash": dataset_hash,
-                "target_column": getattr(self, "target_column", None),
-                "objective": self.user_objective or "Dataset auditing",
-                "report_directory": self.report_dir,
-            },
-            "stages": {}
-        }
-        
-        for stage_key, stage_data in self.evaluation_results["stages"].items():
-            stage_json = {}
-            
-            if isinstance(stage_data, dict):
-                if "tool_used" in stage_data:
-                    stage_json["tool_used"] = stage_data["tool_used"]
-                if "tool_result" in stage_data:
-                    stage_json["tool_result"] = stage_data["tool_result"]
-                if "pair_selection" in stage_data:
-                    stage_json["pair_selection"] = stage_data["pair_selection"]
-                if "ml_model_results" in stage_data:
-                    stage_json["ml_model_results"] = stage_data["ml_model_results"]
-                if "intersectional_ml_model_results" in stage_data:
-                    stage_json["intersectional_ml_model_results"] = stage_data["intersectional_ml_model_results"]
-                if "methods" in stage_data:
-                    stage_json["methods"] = stage_data["methods"]
-                    stage_json["applied_methods"] = stage_data.get("applied_methods", [])
-                    stage_json["status"] = stage_data.get("status", "unknown")
-            else:
-                stage_json["data"] = stage_data
-            
-            json_data["stages"][stage_key] = stage_json
-        
-        return json_data
-
-    def _save_fairness_comparison_files(self):
-        """Save individual fairness comparison JSON files for each method."""
-        stage_data = self.evaluation_results["stages"].get("6_bias_mitigation", {})
-        methods_results = stage_data.get("methods", {})
-        
-        for method, mr in methods_results.items():
-            mitigation_result = mr.get("mitigation_result", {})
-            fairness_comparison = mr.get("fairness_comparison") or mitigation_result.get("fairness_comparison")
-            
-            if fairness_comparison and fairness_comparison.get("status") != "error":
-                try:
-                    fn = f"fairness_comparison_{method.lower().replace(' ', '_')}.json"
-                    fp = os.path.join(self.report_dir, fn)
-                    with open(fp, "w", encoding="utf-8") as f:
-                        f.write(safe_json_dumps(fairness_comparison))
-                except Exception as exc:
-                    print(f"Warning: Could not save fairness comparison JSON: {exc}")
 
 

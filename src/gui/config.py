@@ -56,6 +56,18 @@ def get_default_target_column() -> str:
     return cfg.get("target_column", "")
 
 
+def get_default_ml_model() -> str:
+    """Return the default ML model type from config (key: ml_evaluation -> model_type)."""
+    cfg = load_config()
+    return cfg.get("ml_evaluation", {}).get("model_type", "Random Forest")
+
+
+def get_default_ml_model_params() -> dict:
+    """Return the model_params dictionary from config (key: ml_evaluation -> model_params)."""
+    cfg = load_config()
+    return cfg.get("ml_evaluation", {}).get("model_params", {})
+
+
 def validate_api_keys(model_choice: str) -> tuple:
     """Validate that necessary API keys are present for the selected model."""
     models = get_available_models()

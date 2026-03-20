@@ -35,7 +35,9 @@ models:
   # ---- Free OpenRouter Model (Recommended for testing) ----
   openrouter-free:
     provider: openrouter
-    model: "stepfun/step-3.5-flash:free"  # Free model with good performance
+    #model: "stepfun/step-3.5-flash:free"  # Free model with good performance
+    model: "arcee-ai/trinity-large-preview:free"
+    #model: "nvidia/nemotron-3-super-120b-a12b:free"
     base_url: "https://openrouter.ai/api/v1"
     model_info:
       function_calling: true
@@ -195,7 +197,7 @@ pipeline:
 # How to launch the application via python example_usage.py.
 #   gui   - Streamlit web interface (requires: pip install -r requirements-gui.txt)
 #   quick - Headless evaluation driven by the settings in this file
-mode: quick
+mode: gui
 
 dataset: "adult-all.csv"   # Default dataset shown in the GUI (file must exist in src/data/)
 
@@ -206,7 +208,7 @@ sensitive_attribute_analysis:
   #   - auto: The agent will automatically detect which sensitive attributes to 
   #           analyze based on potential fairness concerns and dataset characteristics.
   #   - restricted: Analyze only the specific attributes listed below.
-  type: restricted
+  type: auto
   # Only used when type is "restricted". List the column names to analyze:
   attributes: ["Sex", "Race", "Age"]
 
@@ -215,14 +217,43 @@ pair_evaluation:
   #   - auto: The agent will automatically select which sensitive attribute pairs 
   #           to analyze based on potential fairness concerns (limited by max_pairs).
   #   - restricted: Analyze only the specific pairs listed below.
-  type: restricted
+  type: auto
   # Maximum number of pairs when type is "auto". Set to null for all pairs.
-  #max_pairs: 2
+  max_pairs: 2
   # Only used when type is "restricted". List the pairs to analyze:
   # Pairs can reference ANY column in the dataset, not just the sensitive attributes above.
-  pairs: [["Sex", "Race"], ["Age", "Education"]]
+  #pairs: [["Sex", "Race"], ["Age", "Education"]]
 
 mitigation_techniques:
   # List of bias mitigation techniques to apply during the mitigation stage.
   # Options include: "reweighting", "resampling", "adversarial_debiasing", "preprocessing", "inprocessing", "postprocessing"
   techniques: ["reweighting", "resampling"]
+
+ml_evaluation:
+  # The ML model type to use for target fairness and mitigation comparisons.
+  # Options: "Random Forest", "Gradient Boosting", "Logistic Regression", "SVC"; Default: "Random Forest"
+  model_type: "Random Forest"
+
+  # Default parameters for each ML model
+  # Default parameters for Random Forest
+  # "Random Forest":
+  #   n_estimators: 100
+  #   max_depth: null
+  # Default parameters for Gradient Boosting
+  # "Gradient Boosting":
+  #   n_estimators: 100
+  #   learning_rate: 0.1
+  #   max_depth: 3
+  # Default parameters for Logistic Regression
+  # "Logistic Regression":
+  #   C: 1.0
+  #   penalty: "l2"
+  # "SVC":
+  #   C: 1.0
+  #   kernel: "rbf"
+
+  model_params:
+    "Random Forest":
+      n_estimators: 100
+      max_depth: null 
+

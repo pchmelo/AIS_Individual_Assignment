@@ -36,10 +36,10 @@ evaluator = FairnessEvaluator(config_path=CONFIG_PATH)
 # read from config.yml automatically. Override any of them here if needed:
 result = evaluator.evaluate(
     data=DATASET_PATH,
-    # target="Income",                              # overrides target_column in config
-    # sensitive_columns=["Sex", "Race", "Age"],     # overrides sensitive_attribute_analysis
+    # target="Income",                                          # overrides target_column in config
+    # sensitive_columns=["Sex", "Race", "Age"],                 # overrides sensitive_attribute_analysis
     # sensitive_pairs=[["Sex", "Race"], ["Age", "Education"]],  # overrides pair_evaluation
-    # max_pairs=3,                                  # cap auto-selected pairs
+    # max_pairs=3,                                              # cap auto-selected pairs
     # mitigation_techniques=["reweighting", "smote"],           # overrides mitigation_techniques
 )
 

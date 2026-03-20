@@ -128,13 +128,14 @@ def _apply_single_mitigation(
             and analyzed_cols
             and target_column
         ):
+            ml_config = ctx.get("ml_config", {})
             mitigated_metrics = fairness_tools.train_and_evaluate_ml_model(
                 dataset_name=result["output_file"],
                 target_column=target_column,
                 sensitive_columns=analyzed_cols,
-                test_size=0.25,
-                model_type="Random Forest",
-                model_params={},
+                test_size=ml_config.get("test_size", 0.25),
+                model_type=ml_config.get("model_type", "Random Forest"),
+                model_params=ml_config.get("model_params", {}),
             )
             if mitigated_metrics.get("status") == "success":
                 result["fairness_comparison"] = _compare_fairness_metrics(

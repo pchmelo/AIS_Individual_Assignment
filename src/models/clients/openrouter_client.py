@@ -89,6 +89,10 @@ class OpenRouterClient(BaseModelClient):
 
             if response.status_code == 200:
                 result = response.json()
+                if "choices" not in result:
+                    # Sometimes OpenRouter returns 200 OK but with an error wrapped in the JSON
+                    raise Exception(f"OpenRouter API Error: Missing 'choices' in response. Response: {result}")
+                
                 message = result["choices"][0]["message"]
                 # Handle reasoning models that return content=null with reasoning field
                 content = message.get("content")
