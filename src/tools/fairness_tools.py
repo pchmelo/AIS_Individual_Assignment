@@ -460,19 +460,23 @@ class FairnessTools(ToolManager):
         except Exception as e:
             return {"status": "error", "message": str(e)}
     
-    def check_class_imbalance(self, dataset_name: str):
+    def check_class_imbalance(self, dataset_name: str, columns_to_check: list = None):
         try:
             path = self._resolve_path(dataset_name)
             df = pd.read_csv(path)
             
-            categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+            if columns_to_check is not None:
+                cols_to_evaluate = [c for c in columns_to_check if c in df.columns]
+            else:
+                cols_to_evaluate = df.select_dtypes(include=['object', 'category']).columns.tolist()
+                
             imbalances = []
             
-            for col in categorical_cols:
+            for col in cols_to_evaluate:
                 value_counts = df[col].value_counts()
                 proportions = (value_counts / len(df) * 100).round(2)
                 
-                if proportions.iloc[0] > 65:
+                if columns_to_check is not None or proportions.iloc[0] > 65:
                     imbalances.append({
                         "column": col,
                         "dominant_value": str(proportions.index[0]),

@@ -70,7 +70,9 @@ class BaseAgent(ABC):
             try:
                 result = self.model_client.generate(messages, temperature, max_tokens)
                 if result:
-                    return result
+                    # Strip reasoning blocks (e.g. DeepSeek's <think> tags)
+                    result = re.sub(r'<think>.*?</think>', '', result, flags=re.DOTALL)
+                    return result.strip()
             except Exception as e:
                 last_error = e
                 error_str = str(e)

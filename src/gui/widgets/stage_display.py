@@ -38,6 +38,7 @@ STAGE_NAMES = {
     "1_objective": "Stage 1: Objective Inspection",
     "2_quality": "Stage 2: Data Quality Analysis",
     "3_sensitive": "Stage 3: Sensitive Attribute Detection",
+    "3_5_discretization": "Stage 3.5: Sensitive Attribute Discretization",
     "4_imbalance": "Stage 4: Imbalance Analysis",
     "4_5_target_fairness": "Stage 4.5: Target Fairness Analysis",
     "5_recommendations": "Stage 5: Recommendations",
@@ -49,6 +50,13 @@ def display_stage_results(stage_key: str, stage_result: dict):
     """Render the results of a completed stage inside the stepwise UI."""
 
     st.markdown(f"### {STAGE_NAMES.get(stage_key, stage_key)}")
+
+    # ------------------------------------------------------------------
+    # Discretization (stage 3.5)
+    # ------------------------------------------------------------------
+    if stage_key == "3_5_discretization":
+        _render_discretization(stage_result)
+        return
 
     # ------------------------------------------------------------------
     # Bias mitigation (stage 6)
@@ -184,6 +192,74 @@ def _render_sensitive_analysis(stage_result: dict, analysis_text: str):
         df = pd.DataFrame(table_data)
         st.dataframe(df, width="stretch", hide_index=True)
         st.info(f"Total: {len(table_data)} sensitive attributes identified")
+
+# ------------------------------------------------------------------
+# Discretization (stage 3.5) rendering
+# ------------------------------------------------------------------
+
+def _render_discretization(stage_result: dict):
+    """Render the results of the discretization stage."""
+
+    status = stage_result.get("status", "")
+
+    if status == "skipped":
+        st.info(stage_result.get("message", "Discretization was skipped."))
+        return
+
+    if status == "error":
+        st.error(stage_result.get("message", "Discretization failed."))
+        return
+
+    discretized = stage_result.get("discretized_columns", [])
+    if not discretized:
+        st.info(stage_result.get("message", "No continuous sensitive columns found — no discretization needed."))
+        return
+
+    method = stage_result.get("method", "auto")
+    st.success(f"Discretized {len(discretized)} continuous column(s) using **{method}** method.")
+
+    # Show discretization summary table
+    table_data = []
+    for col_info in discretized:
+        if col_info.get("status") == "error":
+            table_data.append({
+                "Column": col_info.get("column", "?"),
+                "Method": "ERROR",
+                "Bins": col_info.get("message", "Unknown error"),
+                "Distribution": "",
+            })
+        else:
+            dist = col_info.get("distribution", {})
+            dist_str = ", ".join(f"{k}: {v}" for k, v in dist.items())
+            labels = col_info.get("labels", [])
+            table_data.append({
+                "Column": col_info.get("column", "?"),
+                "Method": col_info.get("method", method),
+                "Bins": str(len(labels)) if labels else "?",
+                "Labels": ", ".join(labels) if labels else "—",
+            })
+
+    if table_data:
+        with st.expander("Discretization Details", expanded=True):
+            st.dataframe(pd.DataFrame(table_data), width="stretch", hide_index=True)
+
+            # Show per-column distribution
+            for col_info in discretized:
+                if col_info.get("status") == "error":
+                    continue
+                dist = col_info.get("distribution", {})
+                if dist:
+                    st.markdown(f"**{col_info.get('column', '?')}** — Bin Distribution:")
+                    dist_rows = [{"Bin": k, "Count": v} for k, v in dist.items()]
+                    st.dataframe(pd.DataFrame(dist_rows), width="stretch", hide_index=True)
+
+    # Agent analysis
+    if "agent_analysis" in stage_result:
+        analysis_text = _clean_agent_analysis(stage_result["agent_analysis"])
+        if analysis_text and analysis_text.strip():
+            st.markdown("---")
+            with st.expander("Agent Analysis — Discretization Reasoning", expanded=True):
+                st.markdown(analysis_text)
 
 
 # ------------------------------------------------------------------

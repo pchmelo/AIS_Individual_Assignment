@@ -434,6 +434,44 @@ def _render_stage_controls(pipeline, stage):
             st.session_state["_stage3_mode"] = mode
 
     # ------------------------------------------------------------------
+    # Stage 3.5 — Discretization of Continuous Sensitive Attributes
+    # ------------------------------------------------------------------
+    elif stage.key == "3_5_discretization":
+        # Get the identification result (continuous columns) from the prior stage
+        identification = (
+            pipeline.evaluation_results.get("stages", {})
+            .get("3_sensitive", {})
+            .get("sensitive_columns", [])
+        )
+        with st.expander("Discretization — configure before running", expanded=True):
+            st.caption(
+                "Continuous sensitive columns need to be discretized for fairness metrics. "
+                "Choose a method and, for non-auto modes, the number of bins."
+            )
+            method = st.radio(
+                "Discretization method",
+                ["auto", "equal_width", "equal_frequency"],
+                index=0,
+                horizontal=True,
+                key="inline_disc_method",
+                help=(
+                    "**auto**: the agent decides bins based on column statistics. "
+                    "**equal_width**: bins of equal range. "
+                    "**equal_frequency**: bins of equal sample count."
+                ),
+            )
+            if method in ("equal_width", "equal_frequency"):
+                st.number_input(
+                    "Number of bins:",
+                    min_value=2,
+                    max_value=50,
+                    value=5,
+                    step=1,
+                    key="inline_disc_bins",
+                )
+            st.session_state["_stage35_method"] = method
+
+    # ------------------------------------------------------------------
     # Stage 4.5 — Intersectional Pair Evaluation
     # ------------------------------------------------------------------
     elif stage.key == "4_5_target_fairness":
@@ -611,6 +649,14 @@ def _apply_inline_stage_controls(pipeline, stage):
             if cols:
                 pipeline._pipeline_ctx["confirmed_sensitive_columns"] = cols
 
+    # Stage 3.5 — discretization
+    elif stage.key == "3_5_discretization":
+        method = ss.get("_stage35_method", "auto")
+        pipeline._pipeline_ctx["discretization_method"] = method
+        if method in ("equal_width", "equal_frequency"):
+            n_bins = int(ss.get("inline_disc_bins", 5))
+            pipeline._pipeline_ctx["discretization_bins"] = n_bins
+
     # Stage 4.5 — pair evaluation
     elif stage.key == "4_5_target_fairness":
         mode = ss.get("_stage45_mode", "auto")
@@ -717,6 +763,21 @@ def _get_confirmation_hint(stage, pipeline):
             "**Next: Sensitive Attribute Detection**\n\n"
             "Use the panel above the input to choose *auto* (agent detects columns) "
             "or *restricted* (you pick the columns), then press **Forward**."
+        )
+
+    if stage.key == "3_5_discretization":
+        sens = (
+            pipeline.evaluation_results.get("stages", {})
+            .get("3_sensitive", {})
+            .get("sensitive_columns", [])
+        )
+        return (
+            f"**Next: Sensitive Attribute Discretization**\n\n"
+            f"Sensitive columns detected: {', '.join(sens) if sens else '—'}\n\n"
+            "If any of these columns are continuous (e.g. Age), they will be discretized "
+            "into bins for fairness metric computation.\n\n"
+            "Use the panel above to choose a discretization method "
+            "(*auto*, *equal_width*, or *equal_frequency*), then press **Forward**."
         )
 
     if stage.key == "4_5_target_fairness":

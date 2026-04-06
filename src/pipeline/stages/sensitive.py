@@ -80,13 +80,27 @@ class SensitiveDetectionStage(BaseStageExecutor):
 
         analysis = stage.agent.run(prompt, max_tokens=4096)
 
-        # Extract column names from the agent response
+        # Extract column names and reasons from the agent response
         identified: List[str] = list(
             dict.fromkeys(re.findall(r"Column:\s*([\w-]+)", analysis))
         )
+        
+        sensitive_reasons = {}
+        for line in analysis.split('\n'):
+            match = re.search(r"Column:\s*([\w-]+)\s*\|\s*Reason:\s*(.*?)\s*(?:\||$)", line, re.IGNORECASE)
+            if match:
+                col, reason = match.groups()
+                sensitive_reasons[col.strip()] = reason.strip()
 
-        if target_column and target_column in identified:
-            identified.remove(target_column)
+        # Ensure only actual columns from the dataset are kept
+        valid_columns = {c["column"] for c in columns_result.get("columns", [])}
+        
+        filtered_identified = []
+        for col in identified:
+            if col in valid_columns and col != target_column:
+                filtered_identified.append(col)
+        
+        identified = filtered_identified
 
         return {
             "tool_used": "detect_sensitive_attributes",
@@ -94,6 +108,7 @@ class SensitiveDetectionStage(BaseStageExecutor):
             "simplified_summary": simplified,
             "agent_analysis": analysis,
             "sensitive_columns": identified,
+            "sensitive_reasons": sensitive_reasons,
         }
 
 

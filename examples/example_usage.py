@@ -10,7 +10,7 @@ load_dotenv()
 
 # Paths (relative to this file)
 CONFIG_PATH  = os.path.join(os.path.dirname(__file__), "config.yml")
-DATASET_PATH = os.path.join(os.path.dirname(__file__), "adult-all.csv")
+DATASET_PATH = os.path.join(os.path.dirname(__file__), "german.csv")
 
 # ---------------------------------------------------------------------------
 # Mode dispatch  —  controlled by  mode:  in config.yml
@@ -36,7 +36,7 @@ evaluator = FairnessEvaluator(config_path=CONFIG_PATH)
 # read from config.yml automatically. Override any of them here if needed:
 result = evaluator.evaluate(
     data=DATASET_PATH,
-    # target="Income",                                          # overrides target_column in config
+    # target="credit_risk",                                      # overrides target_column in config
     # sensitive_columns=["Sex", "Race", "Age"],                 # overrides sensitive_attribute_analysis
     # sensitive_pairs=[["Sex", "Race"], ["Age", "Education"]],  # overrides pair_evaluation
     # max_pairs=3,                                              # cap auto-selected pairs

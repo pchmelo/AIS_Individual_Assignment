@@ -368,6 +368,21 @@ class FairnessEvaluator:
                         "test_size": ml_eval_cfg.get("test_size", 0.25)
                     }
                     
+            # Build discretization config from YAML
+            disc_setting = sens_attr_config.get("discretization", "enable")
+            disc_enabled = disc_setting in ("enable", True, "true", "yes")
+            disc_method = sens_attr_config.get("method", "auto")
+            disc_bins = int(sens_attr_config.get("number_of_bins", 5))
+            disc_threshold = int(sens_attr_config.get("continuous_threshold", 10))
+            discretization_config = {
+                "discretization_enabled": disc_enabled,
+                "discretization_method": disc_method,
+                "discretization_bins": disc_bins,
+                "discretization_threshold": disc_threshold,
+            }
+            if self.verbose and disc_enabled:
+                print(f"Discretization: method={disc_method}, bins={disc_bins}, threshold={disc_threshold}")
+
             # Run the pipeline
             self._pipeline.evaluate_dataset(
                 user_prompt=objective,
@@ -376,6 +391,7 @@ class FairnessEvaluator:
                 ml_config=final_ml_config,
                 max_pairs=max_pairs,
                 mitigation_config=final_mitigation_config,
+                discretization_config=discretization_config,
             )
             
             # Generate report

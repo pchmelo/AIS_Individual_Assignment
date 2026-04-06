@@ -141,10 +141,12 @@ def _parse_markdown_sections(report_text: str) -> dict:
     current_content = []
     
     for line in lines:
-        if line.startswith('## ') and not line.startswith('## Metadata'):
+        # Match ## Header or ### Header (but skip Metadata)
+        if (line.startswith('## ') or line.startswith('### ')) and not line.startswith('## Metadata'):
             if current_section:
                 sections[current_section] = '\n'.join(current_content).strip()
-            current_section = line[3:].strip()
+            # Set new section name (strip the # markers)
+            current_section = line.lstrip('#').strip()
             current_content = []
         elif current_section:
             current_content.append(line)
@@ -158,6 +160,9 @@ def _parse_markdown_sections(report_text: str) -> dict:
 def _clean_text_for_pdf(text: str) -> str:
     if not text:
         return ""
+    # Strip emojis and non-BMP characters that ReportLab cannot handle
+    text = "".join(c for c in text if ord(c) < 65536)
+    
     text = re.sub(r'<tool_call>.*?</tool_call>', '', text, flags=re.DOTALL)
     text = re.sub(r'</?tool_call>', '', text)
     text = re.sub(r'<function=[^>]*>.*?</function>', '', text, flags=re.DOTALL)
@@ -170,6 +175,8 @@ def _escape_xml(text: str) -> str:
     """Escape XML special chars for reportlab."""
     if not text:
         return ""
+    # Ensure no emojis leak into the XML
+    text = "".join(c for c in text if ord(c) < 65536)
     text = text.replace('&', '&amp;')
     text = text.replace('<', '&lt;')
     text = text.replace('>', '&gt;')
@@ -279,15 +286,21 @@ def _format_markdown_table(table_lines: list, styles) -> list:
         for i, row in enumerate(table_data):
             para_row = []
             for cell in row:
-                style = styles['BodyText'] if i > 0 else styles['BodyText']
+                style = styles['BodyText']
                 style_copy = ParagraphStyle(
                     'TableCell',
                     parent=style,
                     fontSize=8,
                     leading=10,
                     alignment=TA_LEFT,
+                    wordWrap='CJK'
                 )
+                if i == 0:
+                    style_copy.fontName = 'Helvetica-Bold'
+                    style_copy.textColor = colors.white
                 escaped_cell = _escape_xml(cell)
+                escaped_cell = escaped_cell.replace('/', '/ ')
+                escaped_cell = escaped_cell.replace('_', '_ ')
                 escaped_cell = escaped_cell.replace('\n', '<br/>')
                 para_row.append(Paragraph(escaped_cell, style_copy))
             para_table_data.append(para_row)
@@ -427,6 +440,16 @@ def _format_markdown_to_paragraphs(text: str, styles) -> list:
             header_text = _escape_xml(header_text)
             header_text = re.sub(r'&lt;b&gt;(.+?)&lt;/b&gt;', r'<b>\1</b>', header_text)
             flowables.append(Paragraph(header_text, styles['SectionHeader']))
+            i += 1
+            continue
+            
+        if stripped.startswith('# '):
+            flush_paragraph()
+            header_text = stripped[2:]
+            header_text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', header_text)
+            header_text = _escape_xml(header_text)
+            header_text = re.sub(r'&lt;b&gt;(.+?)&lt;/b&gt;', r'<b>\1</b>', header_text)
+            flowables.append(Paragraph(header_text, styles['StageHeader']))
             i += 1
             continue
         

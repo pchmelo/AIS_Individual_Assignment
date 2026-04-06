@@ -13,9 +13,12 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 from models.agents.function_caller_agent import FunctionCallerAgent
 from models.agents.data_analyst_agent import DataAnalystAgent
 from models.agents.conversational_agent import ConversationalAgent
+from models.agents.humanizer_agent import HumanizerAgent
+from models.agents.summary_agent import SummaryAgent
 from models.agent_manager import AgentManager
 from tools.fairness_tools import FairnessTools
 from tools.bias_mitigation_tools import BiasMitigationTools
+from tools.discretization_tools import DiscretizationTools
 
 from pipeline.stage import Stage, NavigationAction
 from pipeline.config import EVALUATION_STAGES, load_pipeline_config
@@ -25,7 +28,8 @@ from pipeline.utils import (
     format_pair_selection_markdown,
     generate_markdown_report,
     generate_json_data,
-    save_fairness_comparison_files
+    save_fairness_comparison_files,
+    generate_detailed_markdown_report
 )
 from pipeline.stages.pair_selection import build_pair_selection_prompt, parse_pair_selection_response
 
@@ -45,6 +49,7 @@ class DatasetEvaluationPipeline:
     ):
         self.fairness_tools = FairnessTools()
         self.bias_mitigation_tools = BiasMitigationTools()
+        self.discretization_tools = DiscretizationTools()
         self.agent_manager: Optional[AgentManager] = None
         self.api_key = api_key
 
@@ -115,6 +120,10 @@ class DatasetEvaluationPipeline:
         if self.recommendation_agent is None:
             self.recommendation_agent = ConversationalAgent(model_client=self.model_client)
 
+        self.humanizer_agent = None
+        if self.agent_manager.config.get("use_humanizer", False):
+            self.humanizer_agent = HumanizerAgent(model_client=self.model_client)
+
         # Agents ready
 
 
@@ -156,9 +165,15 @@ class DatasetEvaluationPipeline:
             "ml_config": {"enabled": False},
             "selected_pairs": None,
             "mitigation_config": None,
-            # Tool managers
+            # Discretization config
+            "discretization_enabled": True,
+            "discretization_method": "auto",
+            "discretization_bins": 5,
+            "discretization_threshold": 10,
+            # Tool managers / helpers
             "fairness_tools": self.fairness_tools,
             "bias_mitigation_tools": self.bias_mitigation_tools,
+            "discretization_tools": self.discretization_tools,
             # Reference to the running results dict
             "results": self.evaluation_results["stages"],
         }
@@ -219,12 +234,40 @@ class DatasetEvaluationPipeline:
             return self._go_repeat(user_context)
         return self._go_forward(user_context)
 
+    def humanize_text(self, text: str) -> str:
+        """Process text through the HumanizerAgent if configured."""
+        if self.humanizer_agent and text:
+            print(f"  Humanizing intermediate output ({len(text)} chars)...")
+            try:
+                humanized = self.humanizer_agent.run(text)
+                if humanized:
+                    return humanized
+            except Exception as e:
+                print(f"  Warning: Humanizer failed ({e}), using original text.")
+        return text
+
+    def _humanize_dict(self, data: Any) -> Any:
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if k in ["agent_analysis", "agent_response", "recommendations"] and isinstance(v, str):
+                    data[k] = self.humanize_text(v)
+                elif isinstance(v, (dict, list)):
+                    self._humanize_dict(v)
+        elif isinstance(data, list):
+            for item in data:
+                self._humanize_dict(item)
+        return data
+
     def _go_forward(self, user_context: str = "") -> Dict[str, Any]:
         if self._current_stage_index >= len(self._stages):
             return {"status": "finished", "message": "All stages completed."}
         stage = self._stages[self._current_stage_index]
         stage.user_context = user_context or None
         result = stage.execute(self._pipeline_ctx)
+
+        if self.humanizer_agent:
+            self._humanize_dict(result)
+
         self.evaluation_results["stages"][stage.key] = result
         self._current_stage_index += 1
         
@@ -257,6 +300,10 @@ class DatasetEvaluationPipeline:
         stage.user_context = user_context or None
         self.evaluation_results["stages"].pop(stage.key, None)
         result = stage.execute(self._pipeline_ctx)
+
+        if self.humanizer_agent:
+            self._humanize_dict(result)
+
         self.evaluation_results["stages"][stage.key] = result
         return result
 
@@ -272,6 +319,7 @@ class DatasetEvaluationPipeline:
         ml_config: dict = None,
         max_pairs: int = None,
         mitigation_config: dict = None,
+        discretization_config: dict = None,
     ) -> Dict[str, Any]:
         """Run the full pipeline in one shot (used by terminal mode).
         
@@ -289,6 +337,8 @@ class DatasetEvaluationPipeline:
             mitigation_config: Bias mitigation configuration dict with format
                               {"methods": {"Reweighting": {}, "SMOTE": {}}}.
                               If None, the mitigation stage is skipped.
+            discretization_config: Discretization configuration dict with keys:
+                              enabled (bool), method (str), bins (int), threshold (int).
         """
         dataset_name = self._extract_dataset_name(user_prompt)
         target_column = self._extract_target_column(user_prompt)
@@ -301,6 +351,11 @@ class DatasetEvaluationPipeline:
         if mitigation_config:
             self._pipeline_ctx["mitigation_config"] = mitigation_config
         
+        # Apply discretization config
+        if discretization_config:
+            for key, value in discretization_config.items():
+                self._pipeline_ctx[key] = value
+
         # Store pair configuration in context
         self._pipeline_ctx["max_pairs"] = max_pairs
         self._pipeline_ctx["user_specified_pairs"] = sensitive_pairs
@@ -509,6 +564,33 @@ class DatasetEvaluationPipeline:
 
     def generate_report(self, output_path: str = None) -> str:
         """Generate both markdown report and JSON data file."""        
+        
+        # 1) Generate Executive Summary if configured
+        generate_exec_summary = True
+        if hasattr(self, "agent_manager") and self.agent_manager and hasattr(self.agent_manager, "config"):
+            generate_exec_summary = self.agent_manager.config.get("generate_executive_summary", True)
+            
+        if generate_exec_summary:
+            print("Generating Executive Summary...")
+            try:
+                client = self.agent_manager.get_client() if self.agent_manager else None
+                summary_agent = SummaryAgent(model_client=client)
+                
+                # We can feed it a slimmed-down JSON, or the whole evaluation_results
+                # Since the model might choke on the massive token count of the raw dataframe dumps,
+                # we only send the relevant JSON bits (Stages 4, 4.5, 6).
+                relevant_data = {
+                    "Stage_4": self.evaluation_results.get("stages", {}).get("4_imbalance", {}),
+                    "Stage_4_5": self.evaluation_results.get("stages", {}).get("4_5_target_fairness", {}),
+                    "Stage_6": self.evaluation_results.get("stages", {}).get("6_bias_mitigation", {})
+                }
+                
+                raw_payload = safe_json_dumps(relevant_data)
+                executive_summary = summary_agent.run(raw_payload)
+                self.evaluation_results["executive_summary"] = executive_summary
+            except Exception as e:
+                print(f"Warning: Could not generate Executive Summary: {e}")
+                
         md_path = os.path.join(self.report_dir, "evaluation_report.md")
         json_path = os.path.join(self.report_dir, "stage_data.json")
         
@@ -533,6 +615,27 @@ class DatasetEvaluationPipeline:
             print(f"PDF report saved: {pdf_path}")
         except Exception as e:
             print(f"Warning: Could not generate PDF: {e}")
+            
+        # Check config to see if detailed report should be generated
+        generate_detailed = True
+        if hasattr(self, "agent_manager") and self.agent_manager and hasattr(self.agent_manager, "config"):
+            generate_detailed = self.agent_manager.config.get("generate_detailed_report", True)
+            
+        if generate_detailed:
+            try:
+                detailed_md_content = generate_detailed_markdown_report(self)
+                detailed_md_path = os.path.join(self.report_dir, "detailed_metrics_report.md")
+                with open(detailed_md_path, "w", encoding="utf-8") as f:
+                    f.write(detailed_md_content)
+                print(f"Detailed Markdown report saved: {detailed_md_path}")
+                
+                detailed_pdf_path = os.path.join(self.report_dir, "detailed_metrics_report.pdf")
+                detailed_pdf_bytes = generate_pdf_bytes(detailed_md_path)
+                with open(detailed_pdf_path, "wb") as f:
+                    f.write(detailed_pdf_bytes)
+                print(f"Detailed PDF report saved: {detailed_pdf_path}")
+            except Exception as e:
+                print(f"Warning: Could not generate Detailed PDF: {e}")
         
         return md_content
 

@@ -29,6 +29,10 @@
 #   quick - Quick headless evaluation with defaults
 mode: gui
 
+generate_detailed_report: true # If true, generates detailed_metrics_report.md and .pdf
+
+generate_executive_summary: true # If true, generates an executive summary at the start of the report
+
 
 default_model: step-3.5-flash  # default model for agents that don't specify one explicitly
 

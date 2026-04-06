@@ -26,16 +26,13 @@ class ImbalanceStage(BaseStageExecutor):
         # Tool call
         tool_result = ctx["fairness_tools"].check_class_imbalance(
             ctx["dataset_name"],
+            columns_to_check=sensitive_cols if sensitive_cols else None
         )
 
-        # Keep only the sensitive columns in the result
+        # The tool result now already contains only the sensitive columns 
+        # (or all imbalanced ones if no sensitive columns were identified).
         if tool_result.get("status") == "success" and sensitive_cols:
-            filtered = [
-                d for d in tool_result.get("details", [])
-                if d["column"] in sensitive_cols
-            ]
-            tool_result["details"] = filtered
-            tool_result["imbalanced_columns"] = len(filtered)
+            tool_result["imbalanced_columns"] = len(tool_result.get("details", []))
 
         # Optional ml model
         ml_config = ctx.get("ml_config", {})
@@ -68,8 +65,8 @@ class ImbalanceStage(BaseStageExecutor):
             "Provide:\n"
             "1. Summary of imbalance severity for each sensitive column\n"
             "2. Fairness risks (which groups are underrepresented?)\n"
-            "3. Impact on model bias\n"
-            "4. Specific mitigation recommendations\n\n"
+            "3. Impact on model bias\n\n"
+            "CRITICAL INSTRUCTION: Do NOT provide any mitigation recommendations. Your sole job is to diagnose the biases. Recommendations will be generated in a later stage.\n\n"
             "FORMATTING RULES:\n"
             "- Use ## for main headers, ### for subsections\n"
             "- Use numbered lists (1. 2. 3.) for ordered items\n"

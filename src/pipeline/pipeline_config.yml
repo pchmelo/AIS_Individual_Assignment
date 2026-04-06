@@ -42,6 +42,13 @@ stages:
     description: "Detect protected / sensitive columns."
     requires_confirmation: true
 
+  - key: "3_5_discretization"
+    name: "Sensitive Attribute Discretization"
+    executor: DiscretizationStage
+    agent: recommendation_agent
+    description: "Discretize continuous sensitive attributes into bins."
+    requires_confirmation: true
+
   - key: "4_imbalance"
     name: "Imbalance Analysis"
     executor: ImbalanceStage

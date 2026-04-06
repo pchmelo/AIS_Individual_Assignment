@@ -1,6 +1,8 @@
 # Notebooks
 notebooks/*
 
+examples/*.csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -180,8 +182,8 @@ datasets/
 # Logs and outputs
 logs/
 outputs/
-#results/
-#reports/*
+results/
+reports/*
 *.log
 
 # Reports (keep directory, ignore contents)

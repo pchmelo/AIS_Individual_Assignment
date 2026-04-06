@@ -69,12 +69,35 @@ def format_mitigation_markdown(lines: List[str], stage_data: Dict[str, Any]) -> 
         if comparison_result:
             imb = comparison_result.get("imbalance_metrics", {})
             if imb:
-                lines.append("#### Imbalance Improvement")
+                lines.append("#### Mitigation Scorecard")
                 lines.append("")
-                lines.append(f"- **Original Ratio:** {imb.get('original_imbalance_ratio', 'N/A'):.2f}")
-                lines.append(f"- **Mitigated Ratio:** {imb.get('mitigated_imbalance_ratio', 'N/A'):.2f}")
+                lines.append("| Metric | Before Mitigation | After Mitigation | Improved? | Diff |")
+                lines.append("|--------|-------------------|------------------|-----------|------|")
+                
+                orig_ratio = float(imb.get("original_imbalance_ratio", 0))
+                new_ratio = float(imb.get("mitigated_imbalance_ratio", 0))
+                diff = new_ratio - orig_ratio
                 improvement = imb.get("improvement", "No")
-                lines.append(f"- **Improved:** {improvement}")
+                
+                lines.append(f"| Imbalance Ratio | {orig_ratio:.2f} | {new_ratio:.2f} | {improvement} | {diff:+.2f} |")
+
+                if fairness_comparison:
+                    per_attr = fairness_comparison.get("per_attribute_comparison", {})
+                    for attr, metrics in per_attr.items():
+                        spd = metrics.get("statistical_parity_difference", {})
+                        if spd:
+                            sb = float(spd.get("baseline", 0))
+                            sm = float(spd.get("mitigated", 0))
+                            si = "Yes" if spd.get("improved") else "No"
+                            lines.append(f"| {attr} (Stat Parity) | {sb:.4f} | {sm:.4f} | {si} | {float(spd.get('change', 0)):+.4f} |")
+                            
+                        di = metrics.get("disparate_impact", {})
+                        if di:
+                            db = float(di.get("baseline", 0))
+                            dm = float(di.get("mitigated", 0))
+                            di_imp = "Yes" if di.get("improved") else "No"
+                            lines.append(f"| {attr} (Disp Impact) | {db:.4f} | {dm:.4f} | {di_imp} | {float(di.get('change', 0)):+.4f} |")
+
                 lines.append("")
 
             if "agent_analysis" in comparison_result:
@@ -82,6 +105,30 @@ def format_mitigation_markdown(lines: List[str], stage_data: Dict[str, Any]) -> 
                 lines.append("")
                 lines.append(comparison_result["agent_analysis"])
                 lines.append("")
+
+
+def _format_stage_2_tool_markdown(lines: List[str], tool_result: Dict[str, Any]) -> None:
+    """Format Data Quality Results into a markdown table."""
+    details = tool_result.get("details", [])
+    if not details:
+        lines.append("**No severe data quality issues detected.**")
+        lines.append("")
+        return
+
+    lines.append("### Data Quality Issues Detected")
+    lines.append("")
+    lines.append("| Column | Type | Missing Count | Missing % | Detected Issues |")
+    lines.append("|--------|------|---------------|-----------|-----------------|")
+    
+    for col in details:
+        name = col.get("column", "Unknown")
+        dtype = col.get("data_type", "N/A")
+        m_count = col.get("missing_count", 0)
+        m_pct = col.get("missing_percentage", 0.0)
+        issues = col.get("detected_issues", "None")
+        lines.append(f"| {name} | {dtype} | {m_count} | {m_pct:.1f}% | {issues} |")
+        
+    lines.append("")
 
 
 def format_pair_selection_markdown(lines: List[str], pair_selection: Dict[str, Any]) -> None:
@@ -99,6 +146,147 @@ def format_pair_selection_markdown(lines: List[str], pair_selection: Dict[str, A
     lines.append("")
     lines.append(pair_selection.get("reasoning", "No reasoning provided."))
     lines.append("")
+
+
+def _format_stage_3_tool_markdown(lines: List[str], stage_data: Dict[str, Any]) -> None:
+    """Format Sensitive Attribute Detection results into a markdown table."""
+    sensitive_columns = stage_data.get("sensitive_columns", [])
+    reasons = stage_data.get("sensitive_reasons", {})
+    
+    if not sensitive_columns:
+        lines.append("**No sensitive attributes detected.**")
+        lines.append("")
+        return
+
+    lines.append("### Detected Sensitive Attributes")
+    lines.append("")
+    lines.append("| Column | Reason |")
+    lines.append("|--------|--------|")
+    
+    for col in sensitive_columns:
+        reason = reasons.get(col, "Identified as a protected demographic or socioeconomic attribute.")
+        lines.append(f"| {col} | {reason} |")
+        
+    lines.append("")
+
+
+def _format_stage_4_tool_markdown(lines: List[str], tool_result: Dict[str, Any]) -> None:
+    """Format Class Imbalance tool results into a markdown table."""
+    if not tool_result or tool_result.get("status") != "success":
+        return
+        
+    details = tool_result.get("details", [])
+    if not details:
+        return
+        
+    lines.append("### Class Imbalance Details")
+    lines.append("")
+    lines.append("| Column | Dominant Value | Percentage | Top Distribution |")
+    lines.append("|--------|----------------|------------|------------------|")
+    
+    for item in details:
+        col = item.get("column", "N/A")
+        dom_val = item.get("dominant_value", "N/A")
+        pct = item.get("dominant_percentage", 0)
+        
+        dist = item.get("distribution", {})
+        dist_str = ", ".join(f"{k}: {v:.1f}%" for k, v in dist.items())
+        
+        lines.append(f"| {col} | {dom_val} | {pct:.1f}% | {dist_str} |")
+        
+    lines.append("")
+
+
+def _format_stage_4_5_tool_markdown(lines: List[str], tool_result: Dict[str, Any]) -> None:
+    """Format Target Fairness tool results into a markdown table."""
+    if not tool_result or tool_result.get("status") != "success":
+        return
+        
+    rates = tool_result.get("target_rates_by_group", {})
+    if not rates:
+        return
+        
+    lines.append("### Target Variable Rates by Sensitive Group")
+    lines.append("")
+    lines.append("| Sensitive Feature | Group Level | Total Count | Target Distribution |")
+    lines.append("|-------------------|-------------|-------------|---------------------|")
+    
+    for sensitive_col, groups in rates.items():
+        for group_val, details in groups.items():
+            count = details.get("total_count", 0)
+            target_pcts = details.get("target_percentages", {})
+            dist_str = ", ".join(f"{k}: {v:.1f}%" for k, v in target_pcts.items())
+            
+            lines.append(f"| {sensitive_col} | {group_val} | {count} | {dist_str} |")
+            
+    lines.append("")
+
+
+def _format_discretization_markdown(lines: List[str], stage_data: Dict[str, Any]) -> None:
+    """Format the discretization stage results as markdown (appends to *lines*)."""
+    status = stage_data.get("status", "")
+
+    if status == "skipped":
+        lines.append(f"**Status:** Skipped — {stage_data.get('message', '')}")
+        lines.append("")
+        return
+
+    if status == "error":
+        lines.append(f"**Status:** Error — {stage_data.get('message', '')}")
+        lines.append("")
+        return
+
+    method = stage_data.get("method", "unknown")
+    discretized = stage_data.get("discretized_columns", [])
+
+    if not discretized:
+        lines.append(stage_data.get("message", "No continuous sensitive columns found."))
+        lines.append("")
+        return
+
+    lines.append(f"**Method:** {method}")
+    lines.append(f"**Columns Discretized:** {len(discretized)}")
+    lines.append("")
+
+    # Per-column details
+    for col_info in discretized:
+        col_name = col_info.get("column", "unknown")
+        lines.append(f"### {col_name}")
+        lines.append("")
+
+        if col_info.get("status") == "error":
+            lines.append(f"**Error:** {col_info.get('message', 'Unknown error')}")
+            lines.append("")
+            continue
+
+        col_method = col_info.get("method", method)
+        labels = col_info.get("labels", [])
+        bin_edges = col_info.get("bin_edges", [])
+        dist = col_info.get("distribution", {})
+
+        lines.append(f"- **Binning Method:** {col_method}")
+        if bin_edges:
+            lines.append(f"- **Bin Edges:** {bin_edges}")
+        if labels:
+            lines.append(f"- **Labels:** {', '.join(str(l) for l in labels)}")
+        lines.append("")
+
+        if dist:
+            lines.append("**Bin Distribution:**")
+            lines.append("")
+            lines.append("| Bin | Count |")
+            lines.append("|-----|-------|")
+            for bin_label, count in dist.items():
+                lines.append(f"| {bin_label} | {count} |")
+            lines.append("")
+
+    # Agent reasoning
+    agent_analysis = stage_data.get("agent_analysis", "")
+    if agent_analysis and agent_analysis.strip():
+        lines.append("### Agent Reasoning")
+        lines.append("")
+        lines.append(agent_analysis)
+        lines.append("")
 
 
 def _get_csv_folder_and_prefix(title: str):
@@ -126,6 +314,11 @@ def format_fairness_board_markdown(lines: List[str], ml_results: Dict[str, Any],
 
     folder_name, prefix = _get_csv_folder_and_prefix(title)
 
+    lines.append("#### Evaluated Fairness Metrics")
+    lines.append("")
+    lines.append("| Sensitive Attribute | Stat Parity Diff | Disparate Impact | Highest Rate Group | Lowest Rate Group |")
+    lines.append("|---------------------|------------------|------------------|--------------------|-------------------|")
+
     for col_name, data in fairness.items():
         metrics_data = data.get("metrics", {})
         spd_value = metrics_data.get("statistical_parity_difference", 0)
@@ -134,19 +327,10 @@ def format_fairness_board_markdown(lines: List[str], ml_results: Dict[str, Any],
         min_group = metrics_data.get("min_positive_rate_group", "N/A")
 
         attr_display = col_name.replace("_combined", "").replace("_", " + ")
-        lines.append(f"**Fairness Metrics: {attr_display}**")
-        lines.append("")
-        lines.append(f"- **Stat Parity Diff:** {spd_value:.4f}")
-        lines.append(f"- **Disparate Impact:** {di_value:.4f}")
-        if max_group != "N/A" and min_group != "N/A":
-            lines.append(f"- **Highest Rate Group:** {max_group}")
-            lines.append(f"- **Lowest Rate Group:** {min_group}")
 
-        sanitized_col = col_name.replace("_combined", "").replace(" + ", "_").replace(" ", "")
-        file_prefix = f"{prefix}_" if prefix else ""
-        csv_filename = f"{folder_name}/{file_prefix}fairness_stats_{sanitized_col}.csv"
-        lines.append(f"- **Detailed CSV data:** `{csv_filename}`")
-        lines.append("")
+        lines.append(f"| {attr_display} | {spd_value:.4f} | {di_value:.4f} | {max_group} | {min_group} |")
+
+    lines.append("")
 
 
 def format_ml_model_markdown(lines: List[str], ml_results: Dict[str, Any], title: str = "Machine Learning Evaluation Model") -> None:
@@ -207,11 +391,20 @@ def generate_markdown_report(pipeline) -> str:
     lines.append("---")
     lines.append("")
     
+    # Inject Executive Summary if available
+    executive_summary = pipeline.evaluation_results.get("executive_summary")
+    if executive_summary:
+        lines.append(executive_summary)
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    
     stage_titles = {
         "0_loading": "Stage 0: Dataset Loading",
         "1_objective": "Stage 1: Objective Inspection",
         "2_quality": "Stage 2: Data Quality Analysis",
         "3_sensitive": "Stage 3: Sensitive Attribute Detection",
+        "3_5_discretization": "Stage 3.5: Sensitive Attribute Discretization",
         "4_imbalance": "Stage 4: Imbalance Analysis",
         "4_5_target_fairness": "Stage 4.5: Target Fairness Analysis",
         "5_recommendations": "Stage 5: Recommendations",
@@ -236,16 +429,31 @@ def generate_markdown_report(pipeline) -> str:
         
         if stage_key == "6_bias_mitigation" and "methods" in stage_data:
             format_mitigation_markdown(lines, stage_data)
+        elif stage_key == "3_5_discretization":
+            # Structured discretization report
+            _format_discretization_markdown(lines, stage_data)
         elif "agent_analysis" in stage_data:
             lines.append("### Analysis")
             lines.append("")
             
+            if stage_key == "2_data_quality" and "tool_result" in stage_data:
+                _format_stage_2_tool_markdown(lines, stage_data["tool_result"])
+
+            if stage_key == "3_sensitive":
+                _format_stage_3_tool_markdown(lines, stage_data)
+
+            if stage_key == "4_imbalance" and "tool_result" in stage_data:
+                _format_stage_4_tool_markdown(lines, stage_data["tool_result"])
+                
             # Add Pair Selection before Target Fairness
             if stage_key == "4_5_target_fairness":
                 sensitive_stage = pipeline.evaluation_results["stages"].get("3_sensitive", {})
                 pair_sel = sensitive_stage.get("pair_selection")
                 if pair_sel:
                     format_pair_selection_markdown(lines, pair_sel)
+                
+                if "tool_result" in stage_data:
+                    _format_stage_4_5_tool_markdown(lines, stage_data["tool_result"])
                     
             # Add ML Model info before analysis
             if "ml_model_results" in stage_data:
@@ -421,3 +629,110 @@ def save_fairness_csv_files(pipeline):
                 mitigated_metrics = fc.get("mitigated_metrics", {})
                 if mitigated_metrics and mitigated_metrics.get("status") == "success":
                     extract_and_save(mitigated_metrics, f"Evaluation ML Model ({method})")
+
+def generate_detailed_markdown_report(pipeline: Any) -> str:
+    """Generates a separate markdown report containing detailed group-level fairness tables."""
+    lines = []
+    lines.append("# Detailed Group Metrics Report")
+    lines.append("")
+    
+    stages = pipeline.evaluation_results.get("stages", {})
+    
+    def append_detailed_tables(ml_results: Dict[str, Any], title: str) -> None:
+        if not ml_results or ml_results.get("status") != "success":
+            return
+        fairness = ml_results.get("fairness_analysis", {})
+        if not fairness:
+            return
+            
+        lines.append(f"## {title}")
+        lines.append("")
+        
+        for col_name, data in fairness.items():
+            groups_data = data.get("groups", {})
+            if not groups_data:
+                continue
+                
+            attr_display = col_name.replace("_combined", "").replace("_", " + ")
+            lines.append(f"### Detailed Group Metrics: {attr_display}")
+            lines.append("")
+            lines.append("| Group | Count | Accuracy | F1 Score | Base Rate | Selection Rate | FNR | FPR |")
+            lines.append("|-------|-------|----------|----------|-----------|----------------|-----|-----|")
+            
+            for group, metrics in groups_data.items():
+                g_name = group.replace("_", " + ")
+                
+                def fmt(v):
+                    return f"{v:.4f}" if isinstance(v, float) else str(v)
+                
+                acc = fmt(metrics.get("accuracy", "N/A"))
+                f1 = fmt(metrics.get("f1_macro", "N/A"))
+                br = fmt(metrics.get("base_rate", "N/A"))
+                sr = fmt(metrics.get("positive_rate", "N/A"))
+                fnr = fmt(metrics.get("fnr", "N/A"))
+                fpr = fmt(metrics.get("fpr", "N/A"))
+                count = fmt(metrics.get("count", "N/A"))
+                
+                lines.append(f"| {g_name} | {count} | {acc} | {f1} | {br} | {sr} | {fnr} | {fpr} |")
+                
+            lines.append("")
+
+    if "4_imbalance" in stages and "ml_model_results" in stages["4_imbalance"]:
+        append_detailed_tables(stages["4_imbalance"]["ml_model_results"], "Stage 4: Base Fairness ML Model")
+        
+    if "4_5_target_fairness" in stages and "intersectional_ml_results" in stages["4_5_target_fairness"]:
+        append_detailed_tables(stages["4_5_target_fairness"]["intersectional_ml_results"], "Stage 4.5: Intersectional Fairness ML Model")
+        
+    if "6_bias_mitigation" in stages:
+        base_ml_results = stages.get("4_imbalance", {}).get("ml_model_results", {})
+        base_fairness = base_ml_results.get("fairness_analysis", {})
+        
+        mr_dict = stages["6_bias_mitigation"].get("methods", {})
+        for method, mr in mr_dict.items():
+            mitigation_result = mr.get("mitigation_result", {})
+            fc = mr.get("fairness_comparison") or mitigation_result.get("fairness_comparison")
+            if fc:
+                mitigated_metrics = fc.get("mitigated_metrics", {})
+                if mitigated_metrics and mitigated_metrics.get("status") == "success":
+                    append_detailed_tables(mitigated_metrics, f"Stage 6: Post-Mitigation ML Model ({method})")
+                    
+                    # Generate side-by-side comparative table for all metrics per group
+                    lines.append(f"### Comparative Group Metrics: Before vs After ({method})")
+                    lines.append("")
+                    
+                    mitigated_fairness = mitigated_metrics.get("fairness_analysis", {})
+                    
+                    for col_name, base_data in base_fairness.items():
+                        base_groups = base_data.get("groups", {})
+                        mitigated_groups = mitigated_fairness.get(col_name, {}).get("groups", {})
+                        
+                        if not base_groups or not mitigated_groups:
+                            continue
+                            
+                        attr_display = col_name.replace("_combined", "").replace("_", " + ")
+                        lines.append(f"#### {attr_display}")
+                        lines.append("")
+                        lines.append("| Group | F1 (Before) | F1 (After) | FNR (Before) | FNR (After) | FPR (Before) | FPR (After) | Sel. Rate (Before) | Sel. Rate (After) |")
+                        lines.append("|-------|-------------|------------|--------------|-------------|--------------|-------------|--------------------|-------------------|")
+                        
+                        for group, b_metrics in base_groups.items():
+                            m_metrics = mitigated_groups.get(group, {})
+                            g_name = group.replace("_", " + ")
+                            
+                            def fmt(v):
+                                return f"{v:.4f}" if isinstance(v, float) else str(v)
+                            
+                            b_f1 = fmt(b_metrics.get("f1_macro", "N/A"))
+                            m_f1 = fmt(m_metrics.get("f1_macro", "N/A"))
+                            b_fnr = fmt(b_metrics.get("fnr", "N/A"))
+                            m_fnr = fmt(m_metrics.get("fnr", "N/A"))
+                            b_fpr = fmt(b_metrics.get("fpr", "N/A"))
+                            m_fpr = fmt(m_metrics.get("fpr", "N/A"))
+                            b_sr = fmt(b_metrics.get("positive_rate", "N/A"))
+                            m_sr = fmt(m_metrics.get("positive_rate", "N/A"))
+                            
+                            lines.append(f"| {g_name} | {b_f1} | {m_f1} | {b_fnr} | {m_fnr} | {b_fpr} | {m_fpr} | {b_sr} | {m_sr} |")
+                        
+                        lines.append("")
+
+    return "\n".join(lines)
