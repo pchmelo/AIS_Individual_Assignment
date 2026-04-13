@@ -9,8 +9,11 @@ from gui.widgets.results import (
     display_imbalance_results,
     display_fairness_results,
 )
-from gui.widgets.fairness import render_fairness_comparison_board
-
+from gui.widgets.fairness import (
+    render_fairness_comparison_board,
+    render_mitigated_fairness_table,
+    render_mitigation_scorecard,
+)
 
 def _clean_agent_analysis(text: str) -> str:
     """Remove tool_call artifacts and other LLM formatting noise from agent output."""
@@ -329,8 +332,58 @@ def _render_multi_method_mitigation(stage_result: dict):
             })
 
     if comparison_data:
+        st.caption(
+            "**Original Imbalance Ratio** = majority class ÷ minority class in the original dataset. "
+            "**New Imbalance Ratio** = same ratio after applying the mitigation method. "
+            "Ideal value: 1.0 (perfectly balanced). Closer to 1 is better."
+        )
         df_comparison = pd.DataFrame(comparison_data)
-        st.dataframe(df_comparison, width="stretch", hide_index=True)
+        st.dataframe(
+            df_comparison,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Method": st.column_config.TextColumn(
+                    "Method",
+                    help="The bias mitigation technique applied.",
+                ),
+                "Original Rows": st.column_config.TextColumn(
+                    "Original Rows",
+                    help="Number of samples in the dataset before mitigation.",
+                ),
+                "New Rows": st.column_config.TextColumn(
+                    "New Rows",
+                    help="Number of samples after mitigation. Over-sampling increases this; under-sampling decreases it.",
+                ),
+                "Rows Change": st.column_config.TextColumn(
+                    "Rows Change",
+                    help="Difference in row count. Positive = rows added (over-sampling). Negative = rows removed (under-sampling).",
+                ),
+                "Original Imbalance": st.column_config.TextColumn(
+                    "Original Imbalance Ratio",
+                    help=(
+                        "Imbalance Ratio before mitigation. "
+                        "Formula: largest class count ÷ smallest class count. "
+                        "Ideal: 1.0. Higher values indicate more imbalance."
+                    ),
+                ),
+                "New Imbalance": st.column_config.TextColumn(
+                    "Mitigated Imbalance Ratio",
+                    help=(
+                        "Imbalance Ratio after mitigation. "
+                        "Closer to 1 is better — it means the class distribution is more balanced. "
+                        "A decrease from the original ratio indicates the mitigation was effective."
+                    ),
+                ),
+                "Improvement": st.column_config.TextColumn(
+                    "Improvement",
+                    help=(
+                        "✓ = the mitigated imbalance ratio is lower than the original (improvement). "
+                        "✗ = the ratio did not improve (no change or worsened)."
+                    ),
+                ),
+            },
+        )
 
         best_method = None
         best_ratio = float("inf")
@@ -371,6 +424,19 @@ def _render_single_method_mitigation(stage_result: dict):
     _render_distribution_comparison(mitigation_result)
     _render_imbalance_improvement(comparison_result)
 
+    fairness_comp = stage_result.get("fairness_comparison") or mitigation_result.get("fairness_comparison")
+    if fairness_comp:
+        st.markdown("---")
+        render_mitigated_fairness_table(fairness_comp.get("mitigated_metrics", {}), title="Evaluated Fairness Metrics")
+        
+        render_mitigation_scorecard(fairness_comp, comparison_result)
+
+        st.markdown("---")
+        render_fairness_comparison_board(
+            comparison_data=fairness_comp,
+            method_name=stage_result.get('method', 'Mitigation Method'),
+        )
+
     if comparison_result.get("agent_analysis"):
         st.markdown("---")
         st.markdown("#### Agent Analysis")
@@ -395,9 +461,16 @@ def _render_method_detail(method: str, method_result: dict):
     _render_imbalance_improvement(comparison_result)
 
     if method_result.get("fairness_comparison"):
+        fairness_comp = method_result["fairness_comparison"]
+        
+        st.markdown("---")
+        render_mitigated_fairness_table(fairness_comp.get("mitigated_metrics", {}), title=f"Evaluated Fairness Metrics ({method})")
+        
+        render_mitigation_scorecard(fairness_comp, comparison_result)
+
         st.markdown("---")
         render_fairness_comparison_board(
-            comparison_data=method_result["fairness_comparison"],
+            comparison_data=fairness_comp,
             method_name=method,
         )
 
@@ -469,16 +542,39 @@ def _render_imbalance_improvement(comparison_result: dict):
 
     st.markdown("---")
     st.markdown("#### Imbalance Improvement")
+    st.caption(
+        "**Imbalance Ratio** = majority class count ÷ minority class count. "
+        "Ideal value: 1.0 (perfectly balanced). "
+        "A lower mitigated ratio means the mitigation reduced the class imbalance."
+    )
     imb_metrics = comparison_result["imbalance_metrics"]
 
     col1, col2, col3 = st.columns(3)
     with col1:
         orig_ratio = imb_metrics.get("original_imbalance_ratio", 0)
-        st.metric("Original Imbalance Ratio", f"{orig_ratio:.2f}")
+        st.metric(
+            "Original Imbalance Ratio",
+            f"{orig_ratio:.2f}",
+            help=(
+                "Imbalance Ratio before mitigation. "
+                "Formula: count of the largest class ÷ count of the smallest class. "
+                "Ideal: 1.0. Closer to 1 means the dataset is more balanced."
+            ),
+        )
     with col2:
         mit_ratio = imb_metrics.get("mitigated_imbalance_ratio", 0)
         delta = mit_ratio - orig_ratio
-        st.metric("Mitigated Imbalance Ratio", f"{mit_ratio:.2f}", delta=f"{delta:.2f}", delta_color="inverse")
+        st.metric(
+            "Mitigated Imbalance Ratio",
+            f"{mit_ratio:.2f}",
+            delta=f"{delta:.2f}",
+            delta_color="inverse",
+            help=(
+                "Imbalance Ratio after mitigation. "
+                "Closer to 1.0 is better — it means the class sizes are now more similar. "
+                "A negative delta (shown in green) is good: the ratio decreased toward 1."
+            ),
+        )
     with col3:
         improved = imb_metrics.get("improvement", "No")
         if improved == "Yes":

@@ -408,12 +408,18 @@ def _render_bias_mitigation_tab(report_dir: str, report_file: str):
                             analysis_text = analysis_text[: analysis_text.find("\n[")].strip()
                         methods_analysis[method_name] = analysis_text
 
+    mitigation_dir = os.path.join(report_dir, "mitigation")
     generated_csv_dir = os.path.join(report_dir, "generated_csv")
-    if not os.path.exists(generated_csv_dir):
+    
+    if os.path.exists(mitigation_dir):
+        data_dir = mitigation_dir
+    elif os.path.exists(generated_csv_dir):
+        data_dir = generated_csv_dir
+    else:
         st.info("No bias mitigation was applied in this evaluation.")
         return
 
-    csv_files = [f for f in os.listdir(generated_csv_dir) if f.endswith(".csv")]
+    csv_files = [f for f in os.listdir(data_dir) if f.endswith(".csv")]
     if not csv_files:
         st.info("No bias mitigation was applied in this evaluation.")
         return
@@ -440,7 +446,7 @@ def _render_bias_mitigation_tab(report_dir: str, report_file: str):
     st.markdown("#### Methods Comparison")
     comparison_data = []
     for method, filename in methods_data.items():
-        filepath = os.path.join(generated_csv_dir, filename)
+        filepath = os.path.join(data_dir, filename)
         try:
             df = pd.read_csv(filepath)
             comparison_data.append({"Method": method, "Rows": f"{len(df):,}", "File": filename})
@@ -456,7 +462,7 @@ def _render_bias_mitigation_tab(report_dir: str, report_file: str):
 
     for method, filename in methods_data.items():
         with st.expander(f"{method} - Detailed Results"):
-            filepath = os.path.join(generated_csv_dir, filename)
+            filepath = os.path.join(data_dir, filename)
             try:
                 df = pd.read_csv(filepath)
 
@@ -574,7 +580,10 @@ def _render_visualizations_tab(report_dir: str):
                 key="prev_main_viz_selector",
             )
             if selected_main != "None":
-                st.image(main_image_options[selected_main], caption=selected_main, width="stretch")
+                try:
+                    st.image(main_image_options[selected_main], caption=selected_main, width="stretch")
+                except FileNotFoundError:
+                    st.warning(f"Could not read image file: {selected_main}")
 
     if combination_images:
         st.markdown("---")
@@ -613,11 +622,14 @@ def _render_visualizations_tab(report_dir: str):
                     key=f"prev_combo_img_selector_{selected_combo.replace(' + ', '_')}",
                 )
                 if selected_combo_img != "None":
-                    st.image(
-                        combo_image_options[selected_combo_img],
-                        caption=selected_combo_img,
-                        width="stretch",
-                    )
+                    try:
+                        st.image(
+                            combo_image_options[selected_combo_img],
+                            caption=selected_combo_img,
+                            width="stretch",
+                        )
+                    except FileNotFoundError:
+                        st.warning(f"Could not read image file: {selected_combo_img}")
 
 
 # ======================================================================

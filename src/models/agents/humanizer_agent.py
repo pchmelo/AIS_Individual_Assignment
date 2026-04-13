@@ -44,8 +44,15 @@ EXTREME AND UNBREAKABLE RUELS:
     def run(self, user_message: str, max_tokens: int = 4096) -> str:
         messages = [
             {"role": "system", "content": self.get_system_prompt()},
-            {"role": "user", "content": f"Please humanize the following text:\n\n{user_message}"}
+            {"role": "user", "content": (
+                "OUTPUT ONLY THE FINAL REWRITTEN TEXT. "
+                "Begin your response with the very first word or Markdown element of the rewritten content. "
+                "Any preamble, internal reasoning, or meta-commentary will corrupt the automated pipeline and must NEVER appear.\n\n"
+                f"Text to humanize:\n\n{user_message}"
+            )}
         ]
         
         response = self.ask_model(messages, temperature=0.4, max_tokens=max_tokens)
+        # Apply a secondary inline reasoning strip for any leakage that got past ask_model
+        response = self._strip_inline_reasoning(response)
         return response

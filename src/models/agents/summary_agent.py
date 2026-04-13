@@ -34,13 +34,18 @@ Your task is to review the results of a dataset fairness evaluation pipeline and
 - **Mitigation Verdict**: Direct answer on whether the Bias Mitigation stage (if run) successfully corrected the identified risks. Cite the "Before vs After" metric improvements. Overall success or failure.
 """
     
-    def run(self, user_message: str, max_tokens: int = 1500) -> str:
+    def run(self, user_message: str, max_tokens: int = 3000) -> str:
         messages = [
             {"role": "system", "content": self.get_system_prompt()},
-            {"role": "user", "content": f"Please generate the Executive Summary based on this pipeline report payload:\n\n{user_message}"}
+            {"role": "user", "content": (
+                "Generate the Executive Summary based on this pipeline report payload.\n"
+                "OUTPUT ONLY THE MARKDOWN REPORT. No preamble, no reasoning, no 'let me analyze'.\n"
+                "Start your response immediately with the `### Executive Summary` header.\n\n"
+                f"{user_message}"
+            )}
         ]
         
-        response = self.ask_model(messages, temperature=0.3, max_tokens=max_tokens)
+        response = self.ask_model(messages, temperature=0.2, max_tokens=max_tokens)
         
         # Strip internal monologue: find the first Markdown header and start from there
         headers = ["###", "##", "#"]

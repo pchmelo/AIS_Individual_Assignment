@@ -20,7 +20,7 @@
 # Which model to use by default for all agents.
 # Must match one of the model names defined below.
 
-default_model: openrouter-free  # Change to your preferred model
+default_model: "deepseek-r1:8b"
 
 
 # -----------------------------------------------------------------------------
@@ -32,10 +32,19 @@ default_model: openrouter-free  # Change to your preferred model
 #   - local: Run models locally with transformers
 
 models:
+  # ---- Local Ollama Model ----
+  "deepseek-r1:8b":
+    provider: ollama
+    model: "deepseek-r1:8b"
+    model_info:
+      function_calling: true
+      vision: false
+      structured_output: true
+
   # ---- Free OpenRouter Model (Recommended for testing) ----
   openrouter-free:
     provider: openrouter
-    model: "stepfun/step-3.5-flash:free"  # Free model with good performance
+    model: "arcee-ai/trinity-large-preview:free"
     #model: "arcee-ai/trinity-large-preview:free"
     #model: "nvidia/nemotron-3-super-120b-a12b:free"
     base_url: "https://openrouter.ai/api/v1"
@@ -197,17 +206,22 @@ pipeline:
 # How to launch the application via python example_usage.py.
 #   gui   - Streamlit web interface (requires: pip install -r requirements-gui.txt)
 #   quick - Headless evaluation driven by the settings in this file
-mode: quick
+mode: gui
 
-dataset: "GermanCredit.csv"   # Default dataset shown in the GUI (file must exist in src/data/)
+# Default dataset shown in the GUI (file must exist in src/data/)
+dataset: "GermanCredit.csv"   
 
-target_column: "credit_risk"  # The target variable for analysis (change as needed)
+# The target variable for analysis (change as needed)
+target_column: "credit_risk"  
 
-use_humanizer: true  # If true, runs a secondary agent over generated analysis to improve readability
+# If true, runs a secondary agent over generated analysis to improve readability
+use_humanizer: false 
 
-generate_detailed_report: true # If true, generates detailed_metrics_report.md and .pdf with comprehensive group metrics
+# If true, generates detailed_metrics_report.md and .pdf with comprehensive group metrics
+generate_detailed_report: false
 
-generate_executive_summary: true # If true, runs a final agent to synthesize all findings into a top-level summary
+# If true, runs a final agent to synthesize all findings into a top-level summary
+generate_executive_summary: false
 
 sensitive_attribute_analysis:
   # Type options:

@@ -19,9 +19,20 @@ class DiscretizationStage(BaseStageExecutor):
         discretization_tools = ctx["discretization_tools"]
 
         # ── Get the confirmed sensitive columns ──────────────────────
-        sensitive_cols: List[str] = list(
-            results.get("3_sensitive", {}).get("sensitive_columns", [])
+        # Priority:
+        # 1. discretization_sensitive_columns: GUI-selected subset for Stage 3.5
+        # 2. confirmed_sensitive_columns: manually chosen in Stage 3 (manual mode)
+        # 3. auto-detected columns from Stage 3 results
+        user_disc_attrs = (
+            ctx.get("discretization_sensitive_columns")
+            or ctx.get("confirmed_sensitive_columns")
         )
+        if user_disc_attrs:
+            sensitive_cols = list(user_disc_attrs)
+        else:
+            sensitive_cols = list(
+                results.get("3_sensitive", {}).get("sensitive_columns", [])
+            )
         if not sensitive_cols:
             return {
                 "status": "skipped",
@@ -91,14 +102,21 @@ class DiscretizationStage(BaseStageExecutor):
                         labels=labels,
                     )
                 else:
-                    # Fallback: use equal-width with agent-suggested bin count
+                    # Fallback: agent didn't produce parseable BIN_EDGES.
+                    # Log clearly and fall back to equal-width.
                     n = self._parse_bin_count(agent_response, default=n_bins)
+                    print(
+                        f"[Stage 3.5] WARNING: Agent did not return parseable BIN_EDGES "
+                        f"for '{col_name}'. Falling back to equal_width with {n} bins."
+                    )
                     result = discretization_tools.discretize_column_manual(
                         dataset_name=current_dataset,
                         column_name=col_name,
                         method="equal_width",
                         number_of_bins=n,
                     )
+                    # Mark result so the report clearly shows this was a fallback
+                    result["method"] = "equal_width (fallback — agent failed to return BIN_EDGES)"
 
                 # Build a clean reasoning summary for the report
                 reasoning_summary = self._extract_reasoning_summary(
@@ -167,16 +185,20 @@ class DiscretizationStage(BaseStageExecutor):
             "- The column's real-world meaning (e.g. age → Young/Middle-Aged/Senior)\n"
             "- The data distribution (avoid very imbalanced bins)\n"
             "- Domain conventions for this attribute\n\n"
-            "IMPORTANT: You MUST end your response with EXACTLY these two lines:\n\n"
+            "CRITICAL FORMATTING REQUIREMENT:\n"
+            "Your response MUST end with EXACTLY these two lines and nothing after them:\n\n"
             "BIN_EDGES: [v1, v2, v3, ...]\n"
             "LABELS: [label1, label2, ...]\n\n"
             "Rules:\n"
             "- BIN_EDGES: sorted numeric boundaries, first ≤ min, last ≥ max\n"
-            "- LABELS: one fewer than BIN_EDGES, short human-readable names\n\n"
+            "- LABELS: one fewer than BIN_EDGES, short human-readable names\n"
+            "- Do NOT put any text AFTER the LABELS line\n"
+            "- The BIN_EDGES and LABELS lines are MANDATORY — omitting them causes a pipeline failure\n\n"
             "Example for an age column (range 18-75):\n"
+            "Brief reasoning here (2-3 sentences max).\n"
             "BIN_EDGES: [18, 30, 45, 60, 75]\n"
             "LABELS: [Young, Middle-Aged, Senior, Elderly]\n\n"
-            "Write a brief reasoning (2-4 sentences max), then the BIN_EDGES and LABELS lines."
+            "Now discretize the column '{name}' and end your response with the BIN_EDGES and LABELS lines."
         ).format(
             name=col_stats['column_name'],
             min=col_stats['min'],

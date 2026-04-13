@@ -62,7 +62,11 @@ def display_imbalance_results(stage_result: dict):
     tool_result = stage_result.get("tool_result", {})
     ml_results = stage_result.get("ml_model_results")
 
-    st.info("Class imbalance analysis focuses on detecting skewed distributions in sensitive columns.")
+    st.info(
+        "Class imbalance analysis detects skewed value distributions in sensitive attributes. "
+        "A balanced attribute has roughly equal counts in each category; an imbalanced one "
+        "has one group dominating the data, which can distort model fairness."
+    )
 
     if tool_result.get("status") == "error":
         st.error(f"Error analyzing imbalance: {tool_result.get('message', 'Unknown error')}")
@@ -74,11 +78,35 @@ def display_imbalance_results(stage_result: dict):
     if "imbalance_report" in tool_result:
         report = tool_result["imbalance_report"]
 
+        st.markdown("#### Sensitive Attribute Distributions")
+        st.caption(
+            "**Imbalance Ratio** = majority class count ÷ minority class count. "
+            "Ideal value: 1.0 (perfectly balanced). "
+            "Interpretation: closer to 1 → more balanced; ratios above 3–4 are considered high "
+            "and can cause the model to under-represent minority groups in its predictions."
+        )
+
         for col, details in report.items():
             if col == "target_column":
                 continue
+            ratio = details.get("imbalance_ratio", 0)
+            if ratio >= 4:
+                ratio_label = f"{ratio:.2f} — High imbalance"
+            elif ratio >= 2:
+                ratio_label = f"{ratio:.2f} — Moderate imbalance"
+            else:
+                ratio_label = f"{ratio:.2f} — Low imbalance (near-balanced)"
             with st.expander(f"Distribution Details: {col}"):
-                st.write(f"Imbalance Ratio: {details.get('imbalance_ratio', 0):.2f}")
+                st.metric(
+                    "Imbalance Ratio",
+                    ratio_label,
+                    help=(
+                        "Imbalance Ratio = count of largest class ÷ count of smallest class. "
+                        "Ideal: 1.0. Closer to 1 means the groups are similar in size. "
+                        "A high ratio (> 3) means one group vastly outnumbers others, "
+                        "which can lead to biased predictions favouring the majority group."
+                    ),
+                )
                 dist = details.get("distribution", {})
                 if dist:
                     st.bar_chart(dist)
@@ -93,14 +121,75 @@ def display_fairness_results(stage_result: dict):
     tool_result = stage_result.get("tool_result", {})
     intersectional_ml = stage_result.get("intersectional_ml_results")
 
-    if tool_result.get("status") == "success":
-        st.markdown(f"**Target Column:** {tool_result.get('target_column')}")
+    if tool_result.get("status") != "success":
+        # Show error/skip message if something went wrong
+        msg = tool_result.get("message", "No fairness data available.")
+        st.warning(f"Stage 4.5: {msg}")
+        return
 
-        if intersectional_ml:
-            render_fairness_board(
-                intersectional_ml,
-                title="Target Fairness Analysis (Stage 4.5 - Intersectional)",
-            )
+    target_col = tool_result.get("target_column", "—")
+    st.markdown(f"**Target Column:** `{target_col}`")
+
+    # ── Intersectional ML board (shown if ML model was run) ──────────
+    if intersectional_ml and intersectional_ml.get("status") == "success":
+        render_fairness_board(
+            intersectional_ml,
+            title="Target Fairness Analysis (Stage 4.5 - Intersectional ML)",
+        )
+
+    # ── Per-attribute group breakdown (always shown) ─────────────────
+    target_rates_by_group = tool_result.get("target_rates_by_group", {})
+    if target_rates_by_group:
+        st.markdown("---")
+        st.markdown("#### Target Rate by Sensitive Attribute Group")
+        st.caption(
+            "For each sensitive attribute, the table below shows how the target variable "
+            "is distributed across demographic groups. "
+            "Look for large differences in the positive-class percentage between groups — "
+            "these indicate potential disparate impact (unfair outcomes)."
+        )
+
+        for attr, groups in target_rates_by_group.items():
+            with st.expander(f"**{attr}** — Target Rate by Group", expanded=True):
+                rows = []
+                for group_val, group_data in groups.items():
+                    total = group_data.get("total_count", 0)
+                    pcts = group_data.get("target_percentages", {})
+                    dist = group_data.get("target_distribution", {})
+                    # Build a row with count + pct per target class
+                    row = {"Group": str(group_val), "Count": total}
+                    for cls, pct in pcts.items():
+                        row[f"{cls} (%)"] = round(float(pct), 2)
+                    for cls, cnt in dist.items():
+                        row[f"{cls} (count)"] = int(cnt)
+                    rows.append(row)
+
+                if rows:
+                    df_group = pd.DataFrame(rows).sort_values("Count", ascending=False)
+                    st.dataframe(df_group, hide_index=True, width="stretch")
+
+                    # Highlight disparity
+                    pct_cols = [c for c in df_group.columns if c.endswith("(%)")]
+                    if pct_cols:
+                        # Use first percentage column (positive class) for disparity check
+                        primary_pct_col = pct_cols[0]
+                        try:
+                            vals = df_group[primary_pct_col].dropna().tolist()
+                            if len(vals) >= 2:
+                                gap = max(vals) - min(vals)
+                                if gap > 10:
+                                    st.warning(
+                                        f"Large disparity detected: the '{primary_pct_col}' rate "
+                                        f"varies by **{gap:.1f} percentage points** across groups — "
+                                        f"potential fairness concern."
+                                    )
+                                else:
+                                    st.success(
+                                        f"Low disparity: '{primary_pct_col}' varies by only "
+                                        f"{gap:.1f} pp across groups."
+                                    )
+                        except Exception:
+                            pass
 
     # --- Visualizations ---
     if stage_result.get("tool_result") and stage_result["tool_result"].get("generated_images"):
@@ -120,7 +209,7 @@ def display_fairness_results(stage_result: dict):
                         if part.endswith("_combinations"):
                             combo_folder = part.replace("_combinations", "")
                             break
-                    if combo_folder:
+                    if combo_folder and os.path.exists(img_path):
                         combo_display = combo_folder.replace("_", " + ")
                         combination_images.setdefault(combo_display, []).append(img_path)
                 else:
@@ -142,7 +231,11 @@ def display_fairness_results(stage_result: dict):
                         key="main_viz_selector_cleanup",
                     )
                     if selected_main != "None":
-                        st.image(main_image_options[selected_main], caption=selected_main, width="stretch")
+                        img_path = main_image_options[selected_main]
+                        if os.path.exists(img_path):
+                            st.image(img_path, caption=selected_main, width="stretch")
+                        else:
+                            st.warning(f"Image file not found: {os.path.basename(img_path)}")
 
             if combination_images:
                 st.markdown("---")
@@ -158,9 +251,10 @@ def display_fairness_results(stage_result: dict):
                     combo_imgs = combination_images[selected_combo]
                     combo_image_options = {}
                     for img_path in combo_imgs:
-                        filename = os.path.basename(img_path)
-                        display_name = filename.replace(".png", "").replace("_", " ").title()
-                        combo_image_options[display_name] = img_path
+                        if os.path.exists(img_path):
+                            filename = os.path.basename(img_path)
+                            display_name = filename.replace(".png", "").replace("_", " ").title()
+                            combo_image_options[display_name] = img_path
 
                     if combo_image_options:
                         selected_combo_img = st.selectbox(
@@ -169,8 +263,13 @@ def display_fairness_results(stage_result: dict):
                             key=f"combo_img_selector_{selected_combo.replace(' + ', '_')}_cleanup",
                         )
                         if selected_combo_img != "None":
-                            st.image(
-                                combo_image_options[selected_combo_img],
-                                caption=selected_combo_img,
-                                width="stretch",
-                            )
+                            img_path = combo_image_options[selected_combo_img]
+                            if os.path.exists(img_path):
+                                st.image(img_path, caption=selected_combo_img, width="stretch")
+                            else:
+                                st.warning(f"Image file not found: {os.path.basename(img_path)}")
+                    else:
+                        st.info(
+                            "No visualizations available for this combination. "
+                            "Some images may not have been saved (e.g. due to long file path names)."
+                        )

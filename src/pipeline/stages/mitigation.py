@@ -119,8 +119,38 @@ def _apply_single_mitigation(
 
     # Fairness comparison against baseline
     if result.get("status") == "success" and result.get("output_file"):
-        baseline = ctx["results"].get("4_imbalance", {}).get("baseline_fairness_metrics")
-        analyzed_cols = ctx["results"].get("4_imbalance", {}).get("analyzed_columns", [])
+        import pandas as pd
+        
+        # We need a copy of the baseline so we can merge intersectional pairs into it
+        baseline_raw = ctx["results"].get("4_imbalance", {}).get("baseline_fairness_metrics", {})
+        baseline = dict(baseline_raw)
+        
+        analyzed_cols = list(ctx["results"].get("4_imbalance", {}).get("analyzed_columns", []))
+        
+        target_fairness = ctx["results"].get("4_5_target_fairness", {})
+        intersectional_ml = target_fairness.get("intersectional_ml_results", {})
+        selected_pairs = ctx.get("selected_pairs", [])
+        
+        # If we have intersectional pairs, prepare them in the mitigated dataset
+        if selected_pairs and intersectional_ml.get("status") == "success":
+            try:
+                df_mitig = pd.read_csv(result["output_file"])
+                for pair in selected_pairs:
+                    col1, col2 = pair[0], pair[1]
+                    combined = f"{col1}_{col2}_combined"
+                    df_mitig[combined] = df_mitig[col1].astype(str) + "_" + df_mitig[col2].astype(str)
+                    if combined not in analyzed_cols:
+                        analyzed_cols.append(combined)
+                df_mitig.to_csv(result["output_file"], index=False)
+                
+                # Merge the baseline metrics for the pairs
+                paired_baseline = intersectional_ml.get("fairness_analysis", {})
+                if paired_baseline:
+                    if "fairness_analysis" not in baseline:
+                        baseline["fairness_analysis"] = {}
+                    baseline["fairness_analysis"].update(paired_baseline)
+            except Exception as e:
+                print(f"Warning: Could not create intersectional columns in mitigated dataset: {e}")
 
         if (
             baseline
@@ -210,6 +240,37 @@ def _compare_fairness_metrics(
         di_b = b_metrics.get("disparate_impact", 0)
         di_m = m_metrics.get("disparate_impact", 0)
 
+        # Per-group breakdown (for table comparison)
+        b_groups = baseline_fairness[attr].get("groups", {})
+        m_groups = mitigated_fairness[attr].get("groups", {})
+        all_groups = sorted(set(b_groups) | set(m_groups))
+
+        group_comparison = []
+        _GROUP_METRICS = [
+            ("accuracy", "Accuracy"),
+            ("f1_macro", "F1 Score"),
+            ("positive_rate", "Selection Rate"),
+            ("base_rate", "Base Rate"),
+            ("fnr", "FNR"),
+            ("fpr", "FPR"),
+            ("tpr", "TPR"),
+            ("tnr", "TNR"),
+        ]
+        for group in all_groups:
+            bg = b_groups.get(group, {})
+            mg = m_groups.get(group, {})
+            row = {"group": group}
+            for key, label in _GROUP_METRICS:
+                bv = bg.get(key)
+                mv = mg.get(key)
+                row[f"baseline_{key}"] = bv
+                row[f"mitigated_{key}"] = mv
+                if bv is not None and mv is not None:
+                    row[f"delta_{key}"] = round(float(mv) - float(bv), 4)
+                else:
+                    row[f"delta_{key}"] = None
+            group_comparison.append(row)
+
         comparison["per_attribute_comparison"][attr] = {
             "statistical_parity_difference": {
                 "baseline": float(spd_b),
@@ -223,6 +284,7 @@ def _compare_fairness_metrics(
                 "change": float(di_m - di_b),
                 "improved": bool(abs(1.0 - di_m) < abs(1.0 - di_b)),
             },
+            "group_comparison": group_comparison,
         }
 
     improvements_count = sum(
@@ -245,3 +307,4 @@ def _compare_fairness_metrics(
         comparison["overall_improvement"] = "None or Negative"
 
     return comparison
+

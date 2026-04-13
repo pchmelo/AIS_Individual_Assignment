@@ -3,6 +3,7 @@ from models.clients.base_client import BaseModelClient
 from models.clients.openrouter_client import OpenRouterClient
 from models.clients.gemini_client import GeminiClient
 from models.clients.local_client import LocalModelClient
+from models.clients.ollama_client import OllamaClient
 
 class ClientFactory:
     """
@@ -21,6 +22,7 @@ class ClientFactory:
                 "local": LocalModelClient,
                 "huggingface": LocalModelClient,
                 "transformers": LocalModelClient,
+                "ollama": OllamaClient,
             }
     
     @classmethod

@@ -119,6 +119,7 @@ def _parse_markdown_sections(report_text: str) -> dict:
     
     lines = report_text.split('\n')
     
+    # --- Parse metadata block ---
     metadata = {}
     in_metadata = False
     for line in lines[:20]:
@@ -137,16 +138,38 @@ def _parse_markdown_sections(report_text: str) -> dict:
     if metadata:
         sections['metadata'] = metadata
     
+    # --- Find content between Metadata separator and first Stage header ---
+    # This is where the Executive Summary lives
+    past_metadata = False
+    pre_stage_content = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not past_metadata:
+            if stripped == '---':
+                past_metadata = True
+            continue
+        # Stop when we hit the first ## Stage header
+        if stripped.startswith('## Stage ') or stripped.startswith('## stage '):
+            break
+        pre_stage_content.append(line)
+    
+    pre_stage_text = '\n'.join(pre_stage_content).strip()
+    if pre_stage_text:
+        # Strip leading/trailing --- separators
+        pre_stage_text = re.sub(r'^---\s*', '', pre_stage_text).strip()
+        pre_stage_text = re.sub(r'\s*---$', '', pre_stage_text).strip()
+        if pre_stage_text:
+            sections['Executive Summary'] = pre_stage_text
+    
+    # --- Parse remaining ## sections ---
     current_section = None
     current_content = []
     
     for line in lines:
-        # Match ## Header or ### Header (but skip Metadata)
-        if (line.startswith('## ') or line.startswith('### ')) and not line.startswith('## Metadata'):
+        if line.startswith('## ') and not line.startswith('## Metadata'):
             if current_section:
                 sections[current_section] = '\n'.join(current_content).strip()
-            # Set new section name (strip the # markers)
-            current_section = line.lstrip('#').strip()
+            current_section = line[3:].strip()
             current_content = []
         elif current_section:
             current_content.append(line)
@@ -155,6 +178,7 @@ def _parse_markdown_sections(report_text: str) -> dict:
         sections[current_section] = '\n'.join(current_content).strip()
     
     return sections
+
 
 
 def _clean_text_for_pdf(text: str) -> str:
@@ -575,8 +599,17 @@ def generate_pdf_bytes(report_path: str) -> bytes:
     flowables.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#cccccc')))
     flowables.append(Spacer(1, 0.3*inch))
     
+    # --- Executive Summary first (if present) ---
+    if 'Executive Summary' in sections and sections['Executive Summary']:
+        flowables.append(Paragraph("Executive Summary", styles['StageHeader']))
+        flowables.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#e0e0e0')))
+        flowables.append(Spacer(1, 0.1*inch))
+        clean_content = _clean_text_for_pdf(sections['Executive Summary'])
+        flowables.extend(_format_markdown_to_paragraphs(clean_content, styles))
+        flowables.append(Spacer(1, 0.2*inch))
+    
     for section_name, section_content in sections.items():
-        if section_name == 'metadata' or not section_content:
+        if section_name in ('metadata', 'Executive Summary') or not section_content:
             continue
         
         flowables.append(Paragraph(section_name, styles['StageHeader']))
@@ -588,6 +621,7 @@ def generate_pdf_bytes(report_path: str) -> bytes:
         flowables.extend(para_flowables)
         
         flowables.append(Spacer(1, 0.2*inch))
+
     
     flowables.append(Spacer(1, 0.5*inch))
     flowables.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#cccccc')))

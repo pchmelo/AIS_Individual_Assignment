@@ -26,6 +26,17 @@ from gui.utils import (
 )
 from gui.widgets.stage_display import display_stage_results
 from gui.pdf_generator import generate_pdf_bytes
+import requests
+
+def _get_ollama_models() -> list[str]:
+    """Fetch installed models from local Ollama instance."""
+    try:
+        response = requests.get("http://localhost:11434/api/tags", timeout=2)
+        if response.status_code == 200:
+            return sorted([m["name"] for m in response.json().get("models", [])])
+    except Exception:
+        pass
+    return []
 
 
 def new_evaluation_page():
@@ -60,40 +71,57 @@ def new_evaluation_page():
 
         # ---- Model selection ----
         st.markdown("#### Model Selection")
-        available_models = get_available_models()
-        model_names = list(available_models.keys())
 
-        if not model_names:
-            st.warning("No models defined in config.yml")
-            model_names = ["openrouter"]
-
-        def _model_label(model_name):
-            cfg = available_models.get(model_name, {})
-            provider = cfg.get("provider", "unknown")
-            model_id = cfg.get("model", "")
-            label = f"{model_name}  ({provider}: {model_id})"
-            provider_lower = provider.lower()
-            if provider_lower == "openrouter":
-                has_key = bool(os.getenv("OPENROUTER_API_KEY"))
-                return f"{label} {'Online' if has_key else 'Offline'}"
-            elif provider_lower in ("gemini", "google"):
-                has_key = bool(os.getenv("GOOGLE_API_KEY"))
-                return f"{label} {'Online' if has_key else 'Offline'}"
-            return f"{label} Local"
-
-        default_name = get_default_model_name()
-        default_idx = model_names.index(default_name) if default_name in model_names else 0
-
-        st.session_state.model_choice = st.radio(
-            "Choose default model:",
-            options=model_names,
-            index=default_idx,
-            format_func=_model_label,
-        )
-
-        is_valid, error_msg = validate_api_keys(st.session_state.model_choice)
-        if not is_valid:
-            st.warning("API key missing for this model")
+        st.session_state.use_ollama = st.checkbox("Use Local Model from Ollama", value=False)
+        
+        if st.session_state.use_ollama:
+            ollama_models = _get_ollama_models()
+            if ollama_models:
+                st.session_state.model_choice = st.selectbox(
+                    "Select Ollama Model:",
+                    options=ollama_models
+                )
+            else:
+                st.warning(
+                    "Ollama is either not running or has no models installed. "
+                    "Make sure the Ollama desktop app is open and running in the background!"
+                )
+                st.session_state.model_choice = None
+        else:
+            available_models = get_available_models()
+            model_names = list(available_models.keys())
+    
+            if not model_names:
+                st.warning("No models defined in config.yml")
+                model_names = ["openrouter"]
+    
+            def _model_label(model_name):
+                cfg = available_models.get(model_name, {})
+                provider = cfg.get("provider", "unknown")
+                model_id = cfg.get("model", "")
+                label = f"{model_name}  ({provider}: {model_id})"
+                provider_lower = provider.lower()
+                if provider_lower == "openrouter":
+                    has_key = bool(os.getenv("OPENROUTER_API_KEY"))
+                    return f"{label} {'Online' if has_key else 'Offline'}"
+                elif provider_lower in ("gemini", "google"):
+                    has_key = bool(os.getenv("GOOGLE_API_KEY"))
+                    return f"{label} {'Online' if has_key else 'Offline'}"
+                return f"{label} Local"
+    
+            default_name = get_default_model_name()
+            default_idx = model_names.index(default_name) if default_name in model_names else 0
+    
+            st.session_state.model_choice = st.radio(
+                "Choose default model:",
+                options=model_names,
+                index=default_idx,
+                format_func=_model_label,
+            )
+    
+            is_valid, error_msg = validate_api_keys(st.session_state.model_choice)
+            if not is_valid:
+                st.warning("API key missing for this model")
 
         # ---- Target column ----
         st.markdown("#### Target Column (Optional)")
@@ -156,6 +184,24 @@ def new_evaluation_page():
             kernel_list = ["rbf", "linear", "poly", "sigmoid"]
             st.session_state.ml_model_params["kernel"] = st.selectbox("kernel", kernel_list, index=kernel_list.index(default_params.get("kernel", "rbf")))
 
+        # ---- Additional Reporting Options ----
+        st.markdown("#### Reporting Options")
+        st.session_state.use_humanizer = st.checkbox(
+            "Use Humanizer Agent (Convert AI tone to human)", 
+            value=False,
+            help="Adds a post-processing AI pass to make agent responses read more naturally."
+        )
+        st.session_state.generate_detailed_report = st.checkbox(
+            "Generate Detailed Report", 
+            value=False,
+            help="Generates an exhaustive markdown/PDF document with comprehensive metrics for all groups."
+        )
+        st.session_state.generate_executive_summary = st.checkbox(
+            "Generate Executive Summary", 
+            value=False,
+            help="Runs a final synthesis agent to summarize the most critical fairness risks and mitigation outcomes."
+        )
+
         st.markdown("---")
 
         # ---- Start / Reset buttons ----
@@ -216,11 +262,18 @@ def new_evaluation_page():
 def _initialize_pipeline():
     """Create the pipeline, build stages, and seed the first chat message."""
     try:
-        is_valid, error_msg = validate_api_keys(st.session_state.model_choice)
-        if not is_valid:
-            st.error(f"{error_msg}")
+        
+        if not st.session_state.model_choice:
+            st.error("No model selected. Cannot start evaluation.")
             st.session_state.pipeline_started = False
             return
+            
+        if not st.session_state.get("use_ollama", False):
+            is_valid, error_msg = validate_api_keys(st.session_state.model_choice)
+            if not is_valid:
+                st.error(f"{error_msg}")
+                st.session_state.pipeline_started = False
+                return
 
         prompt = (
             f"Evaluate the dataset '{st.session_state.dataset_name}' "
@@ -238,8 +291,33 @@ def _initialize_pipeline():
         with st.spinner("Initializing pipeline..."):
             pipeline = DatasetEvaluationPipeline(
                 config_path=get_config_path(),
-                default_model=st.session_state.model_choice,
+                # Bypass yaml loader panic: fall back to none temporarily if using an unlisted Ollama model
+                default_model=None if st.session_state.get("use_ollama", False) else st.session_state.model_choice,
             )
+            
+            # Apply UI overrides to the pipeline config
+            if st.session_state.get("use_ollama", False) and st.session_state.model_choice:
+                # Ensure the ollama model gets inserted into the agent manager config
+                model_name = st.session_state.model_choice
+                if "models" not in pipeline.agent_manager.config:
+                    pipeline.agent_manager.config["models"] = {}
+                pipeline.agent_manager.config["models"][model_name] = {
+                    "provider": "ollama",
+                    "model": model_name
+                }
+                pipeline.agent_manager.config["default_model"] = model_name
+                
+                # Since we bypassed it initially, instantiate the newly registered Ollama client
+                pipeline.model_client = pipeline.agent_manager.get_client(model_name)
+
+            pipeline.agent_manager.config["use_humanizer"] = st.session_state.get("use_humanizer", False)
+            pipeline.agent_manager.config["generate_detailed_report"] = st.session_state.get("generate_detailed_report", False)
+            pipeline.agent_manager.config["generate_executive_summary"] = st.session_state.get("generate_executive_summary", False)
+            
+            # Clear pre-allocated agents and re-initialize so they all hook into the new model client & UI overrides
+            pipeline.agent_manager._agents.clear()
+            pipeline._initialize_agents()
+            
             pipeline.build_stages(
                 dataset_name=st.session_state.dataset_name,
                 target_column=st.session_state.target_column,
@@ -415,20 +493,35 @@ def _render_stage_controls(pipeline, stage):
     # ------------------------------------------------------------------
     if stage.key == "3_sensitive":
         with st.expander("Sensitive Attribute Detection — configure before running", expanded=True):
-            st.caption("Auto: the agent detects sensitive columns. Restricted: you choose which columns to analyse.")
+            st.caption(
+                "**Auto**: the AI detects sensitive columns, then you can review and filter the results.  "
+                "**Manual**: you choose the sensitive attributes directly (skips AI detection)."
+            )
             mode = st.radio(
-                "Mode",
-                ["auto", "restricted"],
+                "Detection mode",
+                ["auto", "manual"],
                 index=0,
                 horizontal=True,
                 key="inline_sens_mode",
+                format_func=lambda m: "Auto (AI detects)" if m == "auto" else "Manual (I choose)",
             )
-            if mode == "restricted" and columns:
-                st.multiselect(
-                    "Sensitive attributes to analyse:",
-                    options=columns,
-                    default=[],
-                    key="inline_sens_cols",
+            if mode == "manual":
+                if columns:
+                    st.multiselect(
+                        "Select sensitive attributes to use:",
+                        options=columns,
+                        default=[],
+                        key="inline_sens_cols",
+                        help="These columns will be used directly as sensitive attributes, skipping AI detection.",
+                    )
+                    if not st.session_state.get("inline_sens_cols"):
+                        st.warning("Select at least one column to proceed in manual mode.")
+                else:
+                    st.info("Load a dataset to see available columns.")
+            else:
+                st.info(
+                    "After AI detection, you will be able to review and select "
+                    "which detected attributes to carry forward."
                 )
             # Persist choices so _handle_submit can read them
             st.session_state["_stage3_mode"] = mode
@@ -437,16 +530,42 @@ def _render_stage_controls(pipeline, stage):
     # Stage 3.5 — Discretization of Continuous Sensitive Attributes
     # ------------------------------------------------------------------
     elif stage.key == "3_5_discretization":
-        # Get the identification result (continuous columns) from the prior stage
-        identification = (
+        # Get the sensitive columns confirmed after Stage 3
+        sensitive_cols = (
             pipeline.evaluation_results.get("stages", {})
             .get("3_sensitive", {})
             .get("sensitive_columns", [])
         )
+        # Use the user-refined list if already available
+        refined_cols = pipeline._pipeline_ctx.get("confirmed_sensitive_columns") or sensitive_cols
+
         with st.expander("Discretization — configure before running", expanded=True):
+            # ── Which attributes to discretize ──────────────────────────
+            if refined_cols:
+                st.markdown("**Attributes to discretize**")
+                st.caption(
+                    "Select which sensitive attributes should be considered for discretization. "
+                    "Only continuous (numeric) ones will actually be discretized."
+                )
+                selected_for_disc = st.multiselect(
+                    "Attributes to include in discretization:",
+                    options=refined_cols,
+                    default=refined_cols,
+                    key="inline_disc_attrs",
+                    help="Deselect any attribute you do NOT want to discretize.",
+                )
+                if not selected_for_disc:
+                    st.warning("No attributes selected — discretization will be skipped.")
+                st.session_state["_stage35_attrs"] = selected_for_disc
+            else:
+                st.info("No sensitive columns available from Stage 3.")
+                st.session_state["_stage35_attrs"] = []
+
+            st.markdown("---")
+            # ── Discretization method ───────────────────────────────────
+            st.markdown("**Discretization method**")
             st.caption(
-                "Continuous sensitive columns need to be discretized for fairness metrics. "
-                "Choose a method and, for non-auto modes, the number of bins."
+                "Choose a binning strategy for the continuous columns."
             )
             method = st.radio(
                 "Discretization method",
@@ -644,13 +763,21 @@ def _apply_inline_stage_controls(pipeline, stage):
     # Stage 3 — sensitive attribute detection
     if stage.key == "3_sensitive":
         mode = ss.get("_stage3_mode", "auto")
-        if mode == "restricted":
+        if mode == "manual":
             cols = ss.get("inline_sens_cols", [])
             if cols:
                 pipeline._pipeline_ctx["confirmed_sensitive_columns"] = cols
+                # Also store so the post-detection filter step uses them
+                ss.confirmed_sensitive_columns = cols
 
     # Stage 3.5 — discretization
     elif stage.key == "3_5_discretization":
+        # Apply the user's attribute selection for discretization
+        disc_attrs = ss.get("_stage35_attrs")
+        if disc_attrs is not None:
+            # Use a dedicated key so we don't collide with Stage 3's bypass key
+            pipeline._pipeline_ctx["discretization_sensitive_columns"] = disc_attrs
+
         method = ss.get("_stage35_method", "auto")
         pipeline._pipeline_ctx["discretization_method"] = method
         if method in ("equal_width", "equal_frequency"):
@@ -761,8 +888,12 @@ def _get_confirmation_hint(stage, pipeline):
     if stage.key == "3_sensitive":
         return (
             "**Next: Sensitive Attribute Detection**\n\n"
-            "Use the panel above the input to choose *auto* (agent detects columns) "
-            "or *restricted* (you pick the columns), then press **Forward**."
+            "Use the panel above to choose the detection mode:\n"
+            "- **Auto**: the AI will detect sensitive columns — "
+            "you can review and filter the identified list afterwards.\n"
+            "- **Manual**: select your own sensitive attributes from the dataset "
+            "columns (AI detection is skipped).\n\n"
+            "Then press **Forward**."
         )
 
     if stage.key == "3_5_discretization":
@@ -776,7 +907,9 @@ def _get_confirmation_hint(stage, pipeline):
             f"Sensitive columns detected: {', '.join(sens) if sens else '—'}\n\n"
             "If any of these columns are continuous (e.g. Age), they will be discretized "
             "into bins for fairness metric computation.\n\n"
-            "Use the panel above to choose a discretization method "
+            "Use the panel above to:\n"
+            "1. **Choose which attributes** to include in discretization (all are pre-selected).\n"
+            "2. **Choose a discretization method** "
             "(*auto*, *equal_width*, or *equal_frequency*), then press **Forward**."
         )
 

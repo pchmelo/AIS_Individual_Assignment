@@ -780,10 +780,25 @@ class FairnessTools(ToolManager):
                         safe_name = safe_name.replace('|', '-').replace('?', '').replace('*', '')
                         safe_name = safe_name.replace(' ', '_')
                         
+                        import hashlib
+                        
+                        # Fix for Windows MAX_PATH (260 char limit): Truncate very long combo names
+                        if len(safe_name) > 30:
+                            hash_suffix = hashlib.md5(safe_name.encode()).hexdigest()[:6]
+                            safe_name = safe_name[:25] + "_" + hash_suffix
+                        
                         img_path = os.path.join(individual_dir, f"{safe_name}.png")
-                        plt.savefig(img_path, bbox_inches='tight', dpi=120, facecolor='white')
-                        plt.close()
-                        result["generated_images"].append(img_path)
+                        
+                        try:
+                            plt.savefig(img_path, bbox_inches='tight', dpi=120, facecolor='white')
+                        except Exception as e:
+                            # Final fallback: if path is still magically too long, drop it instead of crashing the pipeline
+                            pass
+                        finally:
+                            plt.close()
+                            
+                        if os.path.exists(img_path):
+                            result["generated_images"].append(img_path)
                     
                     combined_target_rates = {}
                     for group_value in df[combined_col].unique():
@@ -829,6 +844,12 @@ class FairnessTools(ToolManager):
             X = df.drop(columns=[target_column])
             y = df[target_column]
             
+            sample_weights_full = None
+            if 'sample_weight' in X.columns:
+                sample_weights_full = X['sample_weight']
+                X = X.drop(columns=['sample_weight'])
+            
+            
             X_raw = X.copy()
             
             le_dict = {}
@@ -847,15 +868,27 @@ class FairnessTools(ToolManager):
             positive_label_idx = 1 if len(le_target.classes_) > 1 else 0
             positive_class_name = le_target.classes_[positive_label_idx]
             
-            try:
-                X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
-                    X, y, df.index, test_size=test_size, random_state=42, stratify=y
-                )
-            except ValueError as e:
-                print(f"Warning: Stratified split failed ({str(e)}), using regular split")
-                X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
-                    X, y, df.index, test_size=test_size, random_state=42
-                )
+            if sample_weights_full is not None:
+                try:
+                    X_train, X_test, y_train, y_test, w_train, w_test, idx_train, idx_test = train_test_split(
+                        X, y, sample_weights_full, df.index, test_size=test_size, random_state=42, stratify=y
+                    )
+                except ValueError as e:
+                    print(f"Warning: Stratified split failed ({str(e)}), using regular split")
+                    X_train, X_test, y_train, y_test, w_train, w_test, idx_train, idx_test = train_test_split(
+                        X, y, sample_weights_full, df.index, test_size=test_size, random_state=42
+                    )
+            else:
+                w_train = None
+                try:
+                    X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
+                        X, y, df.index, test_size=test_size, random_state=42, stratify=y
+                    )
+                except ValueError as e:
+                    print(f"Warning: Stratified split failed ({str(e)}), using regular split")
+                    X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
+                        X, y, df.index, test_size=test_size, random_state=42
+                    )
             
             X_test_raw = df.loc[idx_test].drop(columns=[target_column])
             model_params = model_params or {}
@@ -869,7 +902,10 @@ class FairnessTools(ToolManager):
             else: 
                 model = RandomForestClassifier(random_state=42, **model_params)
             
-            model.fit(X_train, y_train)
+            if w_train is not None:
+                model.fit(X_train, y_train, sample_weight=w_train)
+            else:
+                model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
             
             acc = accuracy_score(y_test, y_pred)
