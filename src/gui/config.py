@@ -39,15 +39,12 @@ def get_default_model_name() -> str:
 def get_default_dataset() -> str:
     """Return the default dataset filename.
 
-    Priority:
-    1. FAIRNESS_DATASET_PATH env var (set by launch(dataset_path=...))
-    2. ``dataset`` key in config.yml
+    Set by launch(dataset_path=...) via the FAIRNESS_DATASET_PATH env var.
     """
     env_dataset = os.environ.get("FAIRNESS_DATASET_PATH", "")
     if env_dataset and os.path.exists(env_dataset):
         return os.path.basename(env_dataset)
-    cfg = load_config()
-    return cfg.get("dataset", "")
+    return ""
 
 
 def get_default_target_column() -> str:

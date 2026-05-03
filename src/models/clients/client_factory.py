@@ -2,7 +2,6 @@ from typing import Dict, Any, Type
 from models.clients.base_client import BaseModelClient
 from models.clients.openrouter_client import OpenRouterClient
 from models.clients.gemini_client import GeminiClient
-from models.clients.local_client import LocalModelClient
 from models.clients.ollama_client import OllamaClient
 
 class ClientFactory:
@@ -19,9 +18,6 @@ class ClientFactory:
                 "openrouter": OpenRouterClient,
                 "gemini": GeminiClient,
                 "google": GeminiClient,
-                "local": LocalModelClient,
-                "huggingface": LocalModelClient,
-                "transformers": LocalModelClient,
                 "ollama": OllamaClient,
             }
     

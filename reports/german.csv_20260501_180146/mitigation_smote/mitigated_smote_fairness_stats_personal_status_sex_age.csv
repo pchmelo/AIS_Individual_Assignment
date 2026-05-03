@@ -1,0 +1,17 @@
+Group,Count,Accuracy,F1 Score,Selection Rate,Base Rate,FNR,FPR,TPR,TNR
+male : single + Mid-Career,53,0.8491,0.8486,0.4340,0.5094,0.2222,0.0769,0.7778,0.9231
+female : divorced/separated/married + Mid-Career,28,0.8571,0.8542,0.3929,0.4643,0.2308,0.0667,0.7692,0.9333
+male : single + Early-Middle,48,0.9375,0.9259,0.6875,0.7083,0.0588,0.0714,0.9412,0.9286
+male : single + Young,44,0.7955,0.7686,0.6364,0.7045,0.1935,0.2308,0.8065,0.7692
+male : divorced/separated + Early-Middle,6,0.8333,0.4545,0.0000,0.1667,1.0000,0.0000,0.0000,1.0000
+male : divorced/separated + Mid-Career,7,0.7143,0.6500,0.1429,0.4286,0.6667,0.0000,0.3333,1.0000
+female : divorced/separated/married + Late-Career,9,0.8889,0.8615,0.6667,0.7778,0.1429,0.0000,0.8571,1.0000
+male : single + Late-Career,18,0.7778,0.7750,0.5000,0.3889,0.1429,0.2727,0.8571,0.7273
+female : divorced/separated/married + Young,51,0.8431,0.8322,0.3529,0.3922,0.2500,0.0968,0.7500,0.9032
+male : married/widowed + Young,18,0.7222,0.6990,0.2778,0.4444,0.5000,0.1000,0.5000,0.9000
+male : divorced/separated + Late-Career,9,1.0000,1.0000,0.2222,0.2222,0.0000,0.0000,1.0000,1.0000
+male : married/widowed + Early-Middle,18,0.7778,0.7231,0.1667,0.3889,0.5714,0.0000,0.4286,1.0000
+female : divorced/separated/married + Early-Middle,26,0.9231,0.9231,0.4615,0.5385,0.1429,0.0000,0.8571,1.0000
+male : married/widowed + Mid-Career,9,1.0000,1.0000,0.1111,0.1111,0.0000,0.0000,1.0000,1.0000
+male : divorced/separated + Young,4,1.0000,1.0000,0.0000,0.0000,0,0.0000,0,1.0000
+male : married/widowed + Late-Career,2,1.0000,1.0000,0.0000,0.0000,0,0.0000,0,1.0000

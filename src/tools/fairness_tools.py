@@ -1006,11 +1006,18 @@ class FairnessTools(ToolManager):
                         if non_zero_rates and max_rate > 0:
                             min_non_zero_rate = min(non_zero_rates)
                             di = min_non_zero_rate / max_rate
+                            # Use the group with the non-zero minimum for consistency with DI
+                            min_rate_group = min(
+                                (g for g, r in positive_rates.items() if r > 0),
+                                key=lambda g: positive_rates[g]
+                            )
                         else:
                             di = 0.0
+                            min_rate_group = min(positive_rates, key=positive_rates.get) if positive_rates else "N/A"
                     else:
                         spd = 0.0
                         di = 0.0
+                        min_rate_group = "N/A"
                     
                     fairness_results[sens_col] = {
                         "groups": group_metrics,
@@ -1018,7 +1025,7 @@ class FairnessTools(ToolManager):
                             "statistical_parity_difference": round(spd, 4),
                             "disparate_impact": round(di, 4),
                             "max_positive_rate_group": max(positive_rates, key=positive_rates.get) if positive_rates else "N/A",
-                            "min_positive_rate_group": min(positive_rates, key=positive_rates.get) if positive_rates else "N/A"
+                            "min_positive_rate_group": min_rate_group
                         }
                     }
                 

@@ -10,7 +10,7 @@ load_dotenv()
 
 # Paths (relative to this file)
 CONFIG_PATH  = os.path.join(os.path.dirname(__file__), "config.yml")
-DATASET_PATH = os.path.join(os.path.dirname(__file__), "german.csv")
+DATASET_PATH = os.path.join(os.path.dirname(__file__), "adult-all.csv")
 
 # ---------------------------------------------------------------------------
 # Mode dispatch  —  controlled by  mode:  in config.yml

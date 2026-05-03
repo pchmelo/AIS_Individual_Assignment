@@ -3,21 +3,28 @@ from typing import List, Dict
 import time
 import re
 from models.clients.base_client import BaseModelClient
-from models.clients.local_client import LocalModelClient
 
 
 # Patterns that indicate a model is outputting internal reasoning/monologue
 # rather than the actual response content.
 _REASONING_PREAMBLE_PATTERNS = re.compile(
     r'^(?:'
+    r'Alright[,.]|'
     r'Alright,\s*I need to|'
     r'Alright,\s*let me|'
+    r'Okay[,.]|'
     r'Okay,\s*let me|'
     r'Okay,\s*I need to|'
+    r'Got it[,.]|'
+    r'Sure[,.]|'
+    r'Of course[,.]|'
+    r"Let's (?:start|tackle|think|begin|analyze|look|now)|"
+    r'Let me (?:start|think|tackle|begin|analyze|look|now)|'
     r'Let me start by|'
     r'Let me think|'
     r'First,\s*I need to|'
     r'First,\s*let me|'
+    r"First,\s*let's|"
     r'I need to produce|'
     r'I need to analyze|'
     r'I need to review|'
@@ -26,7 +33,9 @@ _REASONING_PREAMBLE_PATTERNS = re.compile(
     r'Looking at the data|'
     r'Now I need to|'
     r'Now,\s+I need to|'
-    r'Now,\s+let me'
+    r'Now,\s+let me|'
+    r'Wait[,.]|'
+    r'So[,]\s+(?:I|we|let me|the)'
     r')',
     re.IGNORECASE | re.MULTILINE
 )
@@ -35,15 +44,17 @@ _REASONING_PREAMBLE_PATTERNS = re.compile(
 # These lines start with first-person reasoning phrases.
 _INLINE_REASONING_LINE_PATTERN = re.compile(
     r'^(?:'
-    r'(?:Alright|Okay|Now)[,.]?\s+(?:I|let me|we need)|'
-    r'Let me (?:start|think|extract|now|draft|compute|structure|analyze|check|see|look|write|calculate|plan)|'
+    r'(?:Alright|Okay|Now)[,.]?\s+(?:I|let me|we need|let\'s)|'
+    r"Let me (?:start|think|extract|now|draft|compute|structure|analyze|check|see|look|write|calculate|plan)|"
+    r"Let's (?:start|think|extract|now|draft|compute|structure|analyze|check|see|look|write|calculate|plan|tackle|begin)|"
     r'(?:I|We)(?:\'ll| will| should| need to| must| can| have to)\s+(?:start|think|extract|draft|compute|structure|analyze|check|see|look|write|calculate|plan|produce|include|present|use|assume|skip|omit|note|mention)|'
     r'(?:I|We) (?:need|think|believe|realize|notice|note|see|found|know|have|want|also|should)|'
     r'Note(?:\s+that)?:|'
-    r'Wait,|'
+    r'Wait[,\s]|'
     r'Actually,|'
     r'But (?:I|wait|note|the|we)|'
     r'Hmm,|'
+    r'Oh[,\s]|'
     r'So (?:I|my|for each|now)|'
     r'For example,\s+(?:I|we)|'
     r'This (?:is|means|would|will|can|might|may) (?:a|the|my|our|an|be|help)|'
@@ -101,10 +112,11 @@ class BaseAgent(ABC):
         model_name: str = None
     ):
         if model_client is None:
-            model_name = model_name
-            self.model_client = LocalModelClient(model=model_name)
-        else:
-            self.model_client = model_client
+            raise ValueError(
+                "model_client is required. Pass a configured client instance "
+                "or use AgentManager.from_yaml() to create agents."
+            )
+        self.model_client = model_client
     
     def ask_model(
         self, 
@@ -171,6 +183,7 @@ class BaseAgent(ABC):
                 sep_match = re.search(r'^---$|^\*\*[^\n]+\*\*$', stripped, re.MULTILINE)
                 if sep_match:
                     stripped = stripped[sep_match.start():].strip()
+                # else: no clean anchor - run inline stripping to remove as much as possible
         
         # Strategy 2: Strip inline reasoning paragraphs
         stripped = self._strip_inline_reasoning(stripped)

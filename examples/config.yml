@@ -20,7 +20,7 @@
 # Which model to use by default for all agents.
 # Must match one of the model names defined below.
 
-default_model: "deepseek-r1:8b"
+default_model: "openrouter-free"  
 
 
 # -----------------------------------------------------------------------------
@@ -29,7 +29,7 @@ default_model: "deepseek-r1:8b"
 # Define available AI models. Supports three providers:
 #   - openrouter: Cloud API with many models (some free)
 #   - gemini: Google's Gemini models
-#   - local: Run models locally with transformers
+#   - ollama: Run models locally via Ollama
 
 models:
   # ---- Local Ollama Model ----
@@ -44,7 +44,7 @@ models:
   # ---- Free OpenRouter Model (Recommended for testing) ----
   openrouter-free:
     provider: openrouter
-    model: "arcee-ai/trinity-large-preview:free"
+    model: "inclusionai/ling-2.6-1t:free"
     #model: "arcee-ai/trinity-large-preview:free"
     #model: "nvidia/nemotron-3-super-120b-a12b:free"
     base_url: "https://openrouter.ai/api/v1"
@@ -95,14 +95,7 @@ models:
   #   provider: gemini
   #   model: "gemini-1.5-pro"
 
-  # ---- Local Models (Requires GPU or powerful CPU) ----
-  # local-mistral:
-  #   provider: local
-  #   model: "mistralai/Mistral-7B-Instruct-v0.2"
-  #   device: "auto"  # "cuda", "cpu", or "auto"
-  #   dtype: "float16"  # "float16", "bfloat16", or "float32"
-
-
+  # ---- Local Ollama Models ----
 # -----------------------------------------------------------------------------
 # Tools Configuration
 # -----------------------------------------------------------------------------
@@ -206,22 +199,19 @@ pipeline:
 # How to launch the application via python example_usage.py.
 #   gui   - Streamlit web interface (requires: pip install -r requirements-gui.txt)
 #   quick - Headless evaluation driven by the settings in this file
-mode: gui
-
-# Default dataset shown in the GUI (file must exist in src/data/)
-dataset: "GermanCredit.csv"   
+mode: quick
 
 # The target variable for analysis (change as needed)
-target_column: "credit_risk"  
+target_column: "Income"  
 
 # If true, runs a secondary agent over generated analysis to improve readability
 use_humanizer: false 
 
 # If true, generates detailed_metrics_report.md and .pdf with comprehensive group metrics
-generate_detailed_report: false
+generate_detailed_report: true
 
 # If true, runs a final agent to synthesize all findings into a top-level summary
-generate_executive_summary: false
+generate_executive_summary: true
 
 sensitive_attribute_analysis:
   # Type options:

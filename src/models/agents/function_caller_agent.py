@@ -60,7 +60,7 @@ class FunctionCallerAgent(BaseAgent):
                 return model_reply
             
             result = self.tool_manager.execute_tool(tool_name, args)
-            print(f"Tool '{tool_name}' executed - Result type: {type(result).__name__}")
+
             
             messages.append({
                 "role": "assistant", 

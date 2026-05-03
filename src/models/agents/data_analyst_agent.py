@@ -57,7 +57,7 @@ class DataAnalystAgent(BaseAgent):
                 return model_reply
             
             result = self.tool_manager.execute_tool(tool_name, args)
-            print(f"Tool '{tool_name}' executed - Result type: {type(result).__name__}")
+
             
             if isinstance(result, dict) and result.get("status") == "error":
                 return json.dumps(result, indent=2)

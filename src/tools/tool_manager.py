@@ -56,7 +56,7 @@ class ToolManager:
         
         result = self.tools[tool_name](**args)
         print(f"\nTOOL EXECUTED: {tool_name}")
-        print(f"TOOL RESULT: {json.dumps(result, indent=2)}\n")
+
         
         return result
     

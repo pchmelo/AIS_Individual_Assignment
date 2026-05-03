@@ -117,8 +117,9 @@ def display_imbalance_results(stage_result: dict):
 # ---------------------------------------------------------------------------
 
 def display_fairness_results(stage_result: dict):
-    """Render target fairness with intersectional ML + visualizations."""
+    """Render target fairness with single-attribute + intersectional ML + visualizations."""
     tool_result = stage_result.get("tool_result", {})
+    single_attribute_ml = stage_result.get("single_attribute_ml_results")
     intersectional_ml = stage_result.get("intersectional_ml_results")
 
     if tool_result.get("status") != "success":
@@ -130,7 +131,14 @@ def display_fairness_results(stage_result: dict):
     target_col = tool_result.get("target_column", "—")
     st.markdown(f"**Target Column:** `{target_col}`")
 
-    # ── Intersectional ML board (shown if ML model was run) ──────────
+    # ── Single-attribute ML board (always shown when ML is enabled) ──
+    if single_attribute_ml and single_attribute_ml.get("status") == "success":
+        render_fairness_board(
+            single_attribute_ml,
+            title="Target Fairness Analysis (Stage 4.5 - Per Sensitive Attribute)",
+        )
+
+    # ── Intersectional ML board (shown when pairs were selected) ─────
     if intersectional_ml and intersectional_ml.get("status") == "success":
         render_fairness_board(
             intersectional_ml,
@@ -150,7 +158,7 @@ def display_fairness_results(stage_result: dict):
         )
 
         for attr, groups in target_rates_by_group.items():
-            with st.expander(f"**{attr}** — Target Rate by Group", expanded=True):
+            with st.expander(f"**{attr}** — Target Rate by Group", expanded=False):
                 rows = []
                 for group_val, group_data in groups.items():
                     total = group_data.get("total_count", 0)

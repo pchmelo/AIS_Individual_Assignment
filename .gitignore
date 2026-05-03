@@ -183,7 +183,7 @@ datasets/
 logs/
 outputs/
 results/
-reports/*
+#reports/*
 *.log
 
 # Reports (keep directory, ignore contents)
@@ -205,3 +205,5 @@ temp/
 secrets.json
 config.json
 credentials.json
+
+paper/*

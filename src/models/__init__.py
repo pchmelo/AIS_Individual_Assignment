@@ -2,7 +2,7 @@ from models.clients import (
     BaseModelClient,
     OpenRouterClient,
     GeminiClient,
-    LocalModelClient,
+    OllamaClient,
     ClientFactory
 )
 from models.agent_manager import AgentManager
@@ -18,7 +18,7 @@ __all__ = [
     'BaseModelClient',
     'OpenRouterClient',
     'GeminiClient',
-    'LocalModelClient',
+    'OllamaClient',
     'ClientFactory',
     
     # Agents

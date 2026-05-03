@@ -42,9 +42,20 @@ class TargetFairnessStage(BaseStageExecutor):
             selected_pairs=selected_pairs,
         )
 
-        # Optional intersectional ML model
+        # Optional ML models
         ml_config = ctx.get("ml_config", {})
+        single_attribute_ml = None
         intersectional_ml = None
+
+        if ml_config.get("enabled"):
+            single_attribute_ml = ctx["fairness_tools"].train_and_evaluate_ml_model(
+                dataset_name=ctx["dataset_name"],
+                target_column=target_column,
+                sensitive_columns=sensitive_cols,
+                test_size=ml_config.get("test_size", 0.25),
+                model_type=ml_config.get("model_type", "Random Forest"),
+                model_params=ml_config.get("model_params", {}),
+            )
 
         if (
             ml_config.get("enabled")
@@ -56,8 +67,15 @@ class TargetFairnessStage(BaseStageExecutor):
 
         # Agent analysis
         ml_context = ""
+        if single_attribute_ml and single_attribute_ml.get("status") == "success":
+            ml_context += (
+                "SINGLE-ATTRIBUTE ML MODEL METRICS:\n"
+                f"(Model: {single_attribute_ml.get('model_type')})\n\n"
+                "Fairness Metrics per Individual Sensitive Attribute:\n"
+                f"{safe_json_dumps(single_attribute_ml.get('fairness_analysis', {}))}\n\n"
+            )
         if intersectional_ml and intersectional_ml.get("status") == "success":
-            ml_context = (
+            ml_context += (
                 "INTERSECTIONAL ML MODEL METRICS:\n"
                 f"(Model: {intersectional_ml.get('model_type')})\n\n"
                 "Fairness Metrics for Combined Groups (Intersectional):\n"
@@ -100,6 +118,7 @@ class TargetFairnessStage(BaseStageExecutor):
             tool_result,
             prompt,
             stage,
+            single_attribute_ml_results=single_attribute_ml,
             intersectional_ml_results=intersectional_ml,
             target_column=target_column,
             analyzed_sensitive_columns=sensitive_cols,

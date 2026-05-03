@@ -12,12 +12,12 @@
 # different local models for different tasks).
 #
 # Required keys per model:
-#   provider: openrouter | gemini | local
+#   provider: openrouter | gemini | ollama
 #
 # Provider-specific keys:
 #   openrouter  -> model, base_url (optional), model_info (optional)
 #   gemini      -> model, api_key (optional, defaults to GOOGLE_API_KEY env var)
-#   local       -> model, device (optional), dtype (optional)
+#   ollama      -> model, base_url (optional, defaults to http://localhost:11434)
 
 
 # -----------------------------------------------------------------------------
@@ -50,12 +50,6 @@ models:
     provider: gemini
     model: "gemini-2.5-flash-lite"
     # api_key: loaded from GOOGLE_API_KEY env var
-
-  granite-code:
-    provider: local
-    model: "ibm-granite/granite-3b-code-instruct"
-    device: "auto"
-    dtype: "float16"
 
 # -----------------------------------------------------------------------------
 # Tools Configuration

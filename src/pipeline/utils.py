@@ -458,6 +458,8 @@ def generate_markdown_report(pipeline) -> str:
             # Add ML Model info before analysis
             if "ml_model_results" in stage_data:
                 format_ml_model_markdown(lines, stage_data["ml_model_results"], title="Base Fairness ML Model")
+            if "single_attribute_ml_results" in stage_data:
+                format_ml_model_markdown(lines, stage_data["single_attribute_ml_results"], title="Per-Attribute Fairness ML Model")
             if "intersectional_ml_results" in stage_data:
                 format_ml_model_markdown(lines, stage_data["intersectional_ml_results"], title="Intersectional Fairness ML Model")
                 
@@ -518,6 +520,8 @@ def generate_json_data(pipeline) -> Dict[str, Any]:
                 stage_json["pair_selection"] = stage_data["pair_selection"]
             if "ml_model_results" in stage_data:
                 stage_json["ml_model_results"] = stage_data["ml_model_results"]
+            if "single_attribute_ml_results" in stage_data:
+                stage_json["single_attribute_ml_results"] = stage_data["single_attribute_ml_results"]
             if "intersectional_ml_results" in stage_data:
                 stage_json["intersectional_ml_results"] = stage_data["intersectional_ml_results"]
             if "methods" in stage_data:
@@ -616,8 +620,12 @@ def save_fairness_csv_files(pipeline):
         extract_and_save(stages["4_imbalance"]["ml_model_results"], "Base Fairness ML Model")
         
     # Check stage 4.5 Target Fairness
-    if "4_5_target_fairness" in stages and "intersectional_ml_results" in stages["4_5_target_fairness"]:
-        extract_and_save(stages["4_5_target_fairness"]["intersectional_ml_results"], "Intersectional Fairness ML Model")
+    if "4_5_target_fairness" in stages:
+        s45 = stages["4_5_target_fairness"]
+        if "single_attribute_ml_results" in s45:
+            extract_and_save(s45["single_attribute_ml_results"], "Per-Attribute Fairness ML Model")
+        if "intersectional_ml_results" in s45:
+            extract_and_save(s45["intersectional_ml_results"], "Intersectional Fairness ML Model")
         
     # Check stage 6 Bias Mitigation
     if "6_bias_mitigation" in stages:
@@ -680,8 +688,12 @@ def generate_detailed_markdown_report(pipeline: Any) -> str:
     if "4_imbalance" in stages and "ml_model_results" in stages["4_imbalance"]:
         append_detailed_tables(stages["4_imbalance"]["ml_model_results"], "Stage 4: Base Fairness ML Model")
         
-    if "4_5_target_fairness" in stages and "intersectional_ml_results" in stages["4_5_target_fairness"]:
-        append_detailed_tables(stages["4_5_target_fairness"]["intersectional_ml_results"], "Stage 4.5: Intersectional Fairness ML Model")
+    if "4_5_target_fairness" in stages:
+        s45 = stages["4_5_target_fairness"]
+        if "single_attribute_ml_results" in s45:
+            append_detailed_tables(s45["single_attribute_ml_results"], "Stage 4.5: Per-Attribute Fairness ML Model")
+        if "intersectional_ml_results" in s45:
+            append_detailed_tables(s45["intersectional_ml_results"], "Stage 4.5: Intersectional Fairness ML Model")
         
     if "6_bias_mitigation" in stages:
         base_ml_results = stages.get("4_imbalance", {}).get("ml_model_results", {})

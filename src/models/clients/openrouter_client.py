@@ -65,7 +65,9 @@ class OpenRouterClient(BaseModelClient):
             "temperature": temperature,
             "max_tokens": max_tokens,
             # Add middle-out transform to automatically compress prompts exceeding context limit
-            "transforms": ["middle-out"]
+            "transforms": ["middle-out"],
+            # Exclude reasoning tokens from the response content
+            "include_reasoning": False,
         }
         
         # Add optional parameters
