@@ -44,7 +44,7 @@ models:
   # ---- Free OpenRouter Model (Recommended for testing) ----
   openrouter-free:
     provider: openrouter
-    model: "inclusionai/ling-2.6-1t:free"
+    model: "openrouter/owl-alpha"
     #model: "arcee-ai/trinity-large-preview:free"
     #model: "nvidia/nemotron-3-super-120b-a12b:free"
     base_url: "https://openrouter.ai/api/v1"
@@ -199,7 +199,7 @@ pipeline:
 # How to launch the application via python example_usage.py.
 #   gui   - Streamlit web interface (requires: pip install -r requirements-gui.txt)
 #   quick - Headless evaluation driven by the settings in this file
-mode: quick
+mode: gui
 
 # The target variable for analysis (change as needed)
 target_column: "Income"  

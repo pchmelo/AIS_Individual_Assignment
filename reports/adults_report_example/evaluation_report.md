@@ -768,6 +768,14 @@ Replace "?" placeholders with proper missing value indicators rather than treati
 ### 4. Ensemble and Specialized Model Approaches
 Deploy ensemble methods combining multiple specialized models: one optimized for majority groups, others fine-tuned for specific underrepresented populations (Black females, Young workers, low-education high-potential). Use stacking with fairness constraints in the meta-learner. Consider implementing Fair-SMOTE that generates synthetic samples while preserving demographic distributions. Explore counterfactual fairness approaches—ensuring predictions remain stable when sensitive attributes are counterfactually changed while keeping qualifications constant.
 
+### 5. Human-in-the-loop integration
+
+Human oversight has to be designed into the pipeline, not bolted on after the mitigation strategies are in place. The most problematic predictions here aren't the confident wrong ones—it's the borderline cases, those landing within 10-15 percentage points of the threshold for members of protected groups, that need a human to look at them before anything happens downstream. For groups where the system's FNR stays above 50% (Black women in mid-level, non-traditional employment; immigrants from countries with thin representation in the training data), treating an automated output as a finished decision is hard to justify given what the numbers show.
+
+Feedback loops are where this tends to fall apart in practice. Domain experts, fairness auditors, and people from the communities being classified all see different things—and all of it is worth capturing. But a review queue that collects bare "incorrect" flags is mostly useless for retraining. The annotation needs to carry reasoning: "model penalizes non-US nativity as a proxy for low income regardless of occupation" gives the next training cycle something to work with. A timestamp and a thumbs-down does not.
+
+Before deployment, the team needs to answer some questions that feel procedural but aren't: which decisions require a human sign-off, who can override the model, how overrides get logged, and at what point does the override rate itself become a signal that something needs to be re-audited. Getting these wrong—or deferring them—turns human review into compliance theater. The 83.6% FNR for Other-service workers and the 100% FNR across several native-country groups are the clearest evidence in this report that some outputs needed a human eye before any mitigation was applied, not after.
+
 ## Priority Order
 
 1. **Immediate (Critical)**: Implement cost-sensitive learning with group-specific misclassification penalties and threshold adjustments to stop active harm from FNR disparities. Deploy basic reweighing preprocessing to balance representation across sensitive attributes during training.

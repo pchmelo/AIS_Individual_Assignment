@@ -1,6 +1,33 @@
-# Dataset Quality & Fairness Evaluation System
+# EquiAudit — Dataset Quality & Fairness Evaluation System
 
-A Streamlit-based GUI application for evaluating datasets on data quality issues and fairness concerns using AI agents.
+An AI-agent pipeline for evaluating datasets on data quality and fairness concerns, with an interactive Streamlit GUI, a headless CLI, and a Python API.
+
+<div align="center">
+<img src="docs/img/simple_diagram.png" alt="System overview" width="320"/>
+
+*A dataset is fed into EquiAudit, which coordinates AI agents under optional user supervision to produce an audit report and a bias-mitigated dataset.*
+</div>
+
+## How It Works
+
+<div align="center">
+<img src="docs/img/data_preparation_fairness_analysis.png" alt="Agent-tool-data interaction" width="600"/>
+
+*AI agents interact bidirectionally with the analyst, invoke tools to query and compute statistics on the dataset, and synthesise findings into an audit report.*
+</div>
+
+<div align="center">
+<img src="docs/img/mitigation.png" alt="Bias mitigation workflow" width="600"/>
+
+*Each selected mitigation technique produces a transformed dataset variant; tools recompute fairness statistics on every variant; the AI agent compares them against the original statistics and produces a comparative mitigation report.*
+</div>
+
+## Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [USAGE.md](docs/USAGE.md) | Installation, configuration reference, all execution modes (GUI / CLI / Python API), and worked examples |
+| [EXTENDING.md](docs/EXTENDING.md) | How to add new Tools, Agent types, LLM backends, and Pipeline stages |
 
 ## Installation
 
@@ -8,56 +35,84 @@ A Streamlit-based GUI application for evaluating datasets on data quality issues
 
 2. Install dependencies:
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt          # core pipeline
+pip install -r requirements-gui.txt      # optional: Streamlit GUI
 ```
 
 ## Configuration
 
-Create a `.env` file in `src/agents/` directory with your API keys:
+Copy `examples/config.yml` and set your API keys as environment variables or in a `.env` file at the project root:
 
 ```bash
-# src/agents/.env
 GOOGLE_API_KEY=your-google-gemini-api-key-here
 OPENROUTER_API_KEY=your-openrouter-api-key-here
 ```
 
-Note: At least one API key is required. The local IBM Granite model option does not require API keys but needs additional dependencies.
+At least one cloud API key is required unless running a local model via Ollama (`ollama serve`).
+
+See [USAGE.md — Configuration File](docs/USAGE.md#configuration-file) for the full annotated config reference.
 
 ## Running the Application
 
-1. Open `src/main.py` and configure the `RUN_MODE` variable:
-   - Set `RUN_MODE = "gui"` for Streamlit GUI mode (default)
-   - Set `RUN_MODE = "terminal"` for terminal mode
+The recommended entry point is `examples/example_usage.py`. Set `mode: gui` or `mode: quick` in `examples/config.yml`, then run:
 
-2. Run the application:
 ```bash
-python src/main.py
+python examples/example_usage.py
 ```
 
-The application will launch in the mode specified in `src/main.py`.
+The script dispatches to the GUI or the headless evaluator based on the config:
+
+```python
+# examples/example_usage.py
+import os, sys, yaml
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from dotenv import load_dotenv
+load_dotenv()
+
+CONFIG_PATH  = os.path.join(os.path.dirname(__file__), "config.yml")
+DATASET_PATH = os.path.join(os.path.dirname(__file__), "adult-all.csv")
+
+with open(CONFIG_PATH, encoding="utf-8") as f:
+    _mode = (yaml.safe_load(f) or {}).get("mode", "quick")
+
+if _mode == "gui":
+    from gui import launch
+    launch(config_path=CONFIG_PATH, dataset_path=DATASET_PATH)
+else:
+    from cli import FairnessEvaluator
+    evaluator = FairnessEvaluator(config_path=CONFIG_PATH)
+    result = evaluator.evaluate(
+        data=DATASET_PATH,
+        # target="Income",                                          # overrides target_column in config
+        # sensitive_columns=["Sex", "Race", "Age"],                # overrides sensitive_attribute_analysis
+        # sensitive_pairs=[["Sex", "Race"], ["Age", "Education"]], # overrides pair_evaluation
+        # mitigation_techniques=["reweighting", "smote"],          # overrides mitigation_techniques
+    )
+    if result.success:
+        print(f"Report: {result.report_dir}")
+    else:
+        print(f"Error:  {result.error}")
+```
+
+See [USAGE.md — Execution Modes](docs/USAGE.md#execution-modes) for the full CLI flag reference and Python API usage.
 
 ## Datasets
-Example datasets are provided in the `src/data/` directory for testing and demonstration purposes.
+Example datasets are provided in `src/data/` for testing. The default example is `adult-all.csv` (UCI Adult Census Income, target column `Income`).
 
 ## Reports
-Generated reports will be saved in the `reports/` directory after evaluation. There is sample report available at `reports/` for each example dataset.
+Generated reports are saved under `reports/<dataset>_<timestamp>/` and include a Markdown narrative, a PDF, per-group fairness metrics, and raw JSON stage data. A sample report is available in `reports/`.
 
 ## GUI Screenshots
 
-![Caption 1](docs/img/1.png)
-*Start Screen*
+![Framework configuration](docs/img/new_1.png)
+*Framework configuration — dataset selection, model backend, target column, and pipeline options.*
 
-![Caption 2](docs/img/2.png)
-*Report Information Screen*
+![Sensitive attribute detection](docs/img/new_2.png)
+*Sensitive attribute detection — agent-generated candidate list pending analyst confirmation.*
 
-![Caption 3](docs/img/3.png)
-*Recommendations Screen*
+![Proxy model fairness results](docs/img/new_3.png)
+*Proxy model fairness results — per-group metric bar charts from the outcome disparity stage.*
 
-![Caption 4](docs/img/4.png)
-*Mitigation Screen 1*
-
-![Caption 5](docs/img/5.png)
-*Mitigation Screen 2*
-
-![Caption 6](docs/img/6.png)
-*Graph Visualization Screen*
+![Previous results browser](docs/img/new_4.png)
+*Previous results browser — inspect and compare past audit runs.*
