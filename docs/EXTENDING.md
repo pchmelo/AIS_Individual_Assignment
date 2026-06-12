@@ -34,7 +34,7 @@ Configuration is declarative: `src/models/config.yml` wires models, agents, and 
 
 A `Tool` is a named, callable function with a JSON-Schema parameter spec, exposed to agents via a `ToolManager`. The LLM receives the schema as part of its system prompt and can invoke tools by emitting structured JSON.
 
-### Step 1 — Implement the ToolManager subclass
+### Step 1: Implement the ToolManager subclass
 
 ```python
 # src/tools/my_tools.py
@@ -105,7 +105,7 @@ class MyTools(ToolManager):
             return {"status": "error", "message": str(exc)}
 ```
 
-### Step 2 — Register in AgentManager
+### Step 2: Register in AgentManager
 
 `AgentManager._get_tool_manager()` in `src/models/agent_manager.py` resolves tool names to instances. Add a branch for your new class:
 
@@ -125,7 +125,7 @@ def _get_tool_manager(self, tool_name: str):
     return self._tools[tool_name]
 ```
 
-### Step 3 — Declare in config.yml
+### Step 3: Declare in config.yml
 
 ```yaml
 tools:
@@ -175,7 +175,7 @@ class BaseAgent(ABC):
 
 `ask_model` handles retries, exponential back-off, `<think>` tag stripping, and reasoning-leakage detection. Always use it instead of calling `self.model_client.generate()` directly.
 
-### Step 1 — Implement the agent
+### Step 1: Implement the agent
 
 ```python
 # src/models/agents/my_agent.py
@@ -215,7 +215,7 @@ class MyAgent(BaseAgent):
         return self.ask_model(messages, temperature=0.2, max_tokens=2048)
 ```
 
-### Step 2 — Register the type string in AgentManager
+### Step 2: Register the type string in AgentManager
 
 `_get_agent_class()` in `src/models/agent_manager.py` maps type strings to classes via substring matching:
 
@@ -237,7 +237,7 @@ def _get_agent_class(self, agent_type: str):
         raise ValueError(f"Unknown agent type: {agent_type}")
 ```
 
-### Step 3 — Declare in config.yml
+### Step 3: Declare in config.yml
 
 ```yaml
 agents:
@@ -287,7 +287,7 @@ class BaseModelClient(ABC):
 
 `generate` must return a plain string (the model's text response). Raise a standard `Exception` with the HTTP status code in the message on API errors — `BaseAgent.ask_model` parses the status code for retry decisions.
 
-### Step 1 — Implement the client
+### Step 1: Implement the client
 
 ```python
 # src/models/clients/my_provider_client.py
@@ -357,7 +357,7 @@ class MyProviderClient(BaseModelClient):
         )
 ```
 
-### Step 2 — Register in ClientFactory
+### Step 2: Register in ClientFactory
 
 `ClientFactory._providers` in `src/models/clients/client_factory.py` is a class-level dict populated lazily in `_ensure_providers_loaded()`:
 
@@ -378,7 +378,7 @@ class ClientFactory:
             }
 ```
 
-### Step 3 — Declare in config.yml
+### Step 3: Declare in config.yml
 
 ```yaml
 models:
@@ -432,7 +432,7 @@ class BaseStageExecutor(ABC):
 
 The dict your executor returns is stored verbatim in `stage_data.json` under the stage key.
 
-### Step 1 — Implement the executor
+### Step 1: Implement the executor
 
 ```python
 # src/pipeline/stages/my_stage.py
@@ -485,7 +485,7 @@ class MyCustomStage(BaseStageExecutor):
 
 For stages that need to write files (e.g. images), write to `ctx["report_dir"]` and include the paths in the returned dict.
 
-### Step 2 — Register in the executor registry
+### Step 2: Register in the executor registry
 
 `_EXECUTOR_REGISTRY` in `src/pipeline/config.py` maps YAML class name strings to executor classes:
 
@@ -514,7 +514,7 @@ Also add the import at the top of `src/pipeline/stages/__init__.py` if you want 
 from pipeline.stages.my_stage import MyCustomStage
 ```
 
-### Step 3 — Add to pipeline_config.yml
+### Step 3: Add to pipeline_config.yml
 
 `src/pipeline/pipeline_config.yml` defines stage order, executor binding, and optional behaviour flags:
 
@@ -540,7 +540,7 @@ stages:
 
 The `agent:` value must be an **attribute name on `DatasetEvaluationPipeline`** (`src/pipeline/pipeline.py`). If you are adding a new agent to an existing attribute slot, no pipeline changes are needed. If you need a new dedicated agent attribute, add it to `DatasetEvaluationPipeline.__init__` and wire it via `AgentManager.get_agent()`.
 
-### Step 4 — Expose the agent attribute on the pipeline (if needed)
+### Step 4: Expose the agent attribute on the pipeline (if needed)
 
 ```python
 # src/pipeline/pipeline.py  (inside DatasetEvaluationPipeline.__init__)

@@ -106,13 +106,13 @@ Generated reports are saved under `reports/<dataset>_<timestamp>/` and include a
 ## GUI Screenshots
 
 ![Framework configuration](docs/img/new_1.png)
-*Framework configuration — dataset selection, model backend, target column, and pipeline options.*
+*Framework configuration (dataset selection, model backend, target column, and pipeline options).*
 
 ![Sensitive attribute detection](docs/img/new_2.png)
-*Sensitive attribute detection — agent-generated candidate list pending analyst confirmation.*
+*Sensitive attribute detection (agent-generated candidate list pending analyst confirmation).*
 
 ![Proxy model fairness results](docs/img/new_3.png)
-*Proxy model fairness results — per-group metric bar charts from the outcome disparity stage.*
+*Proxy model fairness results (per-group metric bar charts from the outcome disparity stage).*
 
 ![Previous results browser](docs/img/new_4.png)
-*Previous results browser — inspect and compare past audit runs.*
+*Previous results browser (inspect and compare past audit runs).*
