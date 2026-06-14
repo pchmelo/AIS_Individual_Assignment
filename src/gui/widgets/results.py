@@ -54,62 +54,121 @@ def display_sensitive_results(stage_data: dict):
 
 
 # ---------------------------------------------------------------------------
-# Stage 4 – Imbalance Analysis  (the *redefined* version used in stepwise UI)
+# Stage 4 – Imbalance Analysis
 # ---------------------------------------------------------------------------
 
 def display_imbalance_results(stage_result: dict):
-    """Render imbalance analysis including optional ML model board."""
+    """Render an imbalance board: summary metrics, overview table, and per-attribute tabs."""
     tool_result = stage_result.get("tool_result", {})
-    ml_results = stage_result.get("ml_model_results")
-
-    st.info(
-        "Class imbalance analysis detects skewed value distributions in sensitive attributes. "
-        "A balanced attribute has roughly equal counts in each category; an imbalanced one "
-        "has one group dominating the data, which can distort model fairness."
-    )
 
     if tool_result.get("status") == "error":
         st.error(f"Error analyzing imbalance: {tool_result.get('message', 'Unknown error')}")
         return
 
-    if ml_results and ml_results.get("status") == "success":
-        render_fairness_board(ml_results, title="ML Model Fairness Analysis (Stage 4)")
+    details_list = tool_result.get("details", [])
+    if not details_list:
+        st.info("No imbalance data available.")
+        return
 
-    if "imbalance_report" in tool_result:
-        report = tool_result["imbalance_report"]
+    # Pre-compute imbalance ratio for each attribute from distribution percentages
+    entries = []
+    for item in details_list:
+        dist = item.get("distribution", {})
+        if dist:
+            values = list(dist.values())
+            ratio = max(values) / min(values) if min(values) > 0 else float("inf")
+        else:
+            ratio = 0.0
+        entries.append({
+            "column": item.get("column", "?"),
+            "dominant_value": item.get("dominant_value", "?"),
+            "dominant_pct": item.get("dominant_percentage", 0.0),
+            "ratio": ratio,
+            "distribution": dist,
+        })
 
-        st.markdown("#### Sensitive Attribute Distributions")
-        st.caption(
-            "**Imbalance Ratio** = majority class count ÷ minority class count. "
-            "Ideal value: 1.0 (perfectly balanced). "
-            "Interpretation: closer to 1 → more balanced; ratios above 3–4 are considered high "
-            "and can cause the model to under-represent minority groups in its predictions."
-        )
+    def _severity(r: float) -> str:
+        if r >= 4:
+            return "High"
+        if r >= 2:
+            return "Moderate"
+        return "Low"
 
-        for col, details in report.items():
-            if col == "target_column":
-                continue
-            ratio = details.get("imbalance_ratio", 0)
-            if ratio >= 4:
-                ratio_label = f"{ratio:.2f} — High imbalance"
-            elif ratio >= 2:
-                ratio_label = f"{ratio:.2f} — Moderate imbalance"
-            else:
-                ratio_label = f"{ratio:.2f} — Low imbalance (near-balanced)"
-            with st.expander(f"Distribution Details: {col}"):
-                st.metric(
-                    "Imbalance Ratio",
-                    ratio_label,
-                    help=(
-                        "Imbalance Ratio = count of largest class ÷ count of smallest class. "
-                        "Ideal: 1.0. Closer to 1 means the groups are similar in size. "
-                        "A high ratio (> 3) means one group vastly outnumbers others, "
-                        "which can lead to biased predictions favouring the majority group."
-                    ),
-                )
-                dist = details.get("distribution", {})
-                if dist:
-                    st.bar_chart(dist)
+    high   = sum(1 for e in entries if _severity(e["ratio"]) == "High")
+    mod    = sum(1 for e in entries if _severity(e["ratio"]) == "Moderate")
+    low    = sum(1 for e in entries if _severity(e["ratio"]) == "Low")
+
+    # ── Summary metric cards ──────────────────────────────────────────────
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Attributes Analyzed", len(entries))
+    with c2:
+        st.metric("High Imbalance (≥ 4×)", high)
+    with c3:
+        st.metric("Moderate (2×–4×)", mod)
+    with c4:
+        st.metric("Near-Balanced (< 2×)", low)
+
+    st.caption(
+        "**Imbalance Ratio** = highest group % ÷ lowest group %. "
+        "Ideal: 1.0 (all groups equally represented). "
+        "Ratios above 4× are considered high — the minority group may be systematically under-represented."
+    )
+
+    # ── Overview table ────────────────────────────────────────────────────
+    st.markdown("#### Overview")
+    table_rows = []
+    for e in entries:
+        sev = _severity(e["ratio"])
+        table_rows.append({
+            "Attribute": e["column"],
+            "Imbalance Ratio": round(e["ratio"], 2),
+            "Severity": sev,
+            "Dominant Group": str(e["dominant_value"]),
+            "Dominant %": round(e["dominant_pct"], 1),
+        })
+
+    st.dataframe(
+        pd.DataFrame(table_rows),
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "Imbalance Ratio": st.column_config.NumberColumn(
+                "Imbalance Ratio",
+                format="%.2f",
+                help="Ratio of the most common group's percentage to the least common group's percentage.",
+            ),
+            "Severity": st.column_config.TextColumn(
+                "Severity",
+                help="High ≥ 4×, Moderate 2×–4×, Low < 2×.",
+            ),
+            "Dominant %": st.column_config.NumberColumn(
+                "Dominant %",
+                format="%.1f%%",
+                help="Percentage of rows belonging to the most frequent group.",
+            ),
+        },
+    )
+
+    # ── Per-attribute tabs with bar chart ─────────────────────────────────
+    st.markdown("#### Distribution by Attribute")
+    tab_labels = [e["column"] for e in entries]
+    tabs = st.tabs(tab_labels)
+
+    for tab, e in zip(tabs, entries):
+        with tab:
+            sev = _severity(e["ratio"])
+            badge = {"High": st.error, "Moderate": st.warning, "Low": st.success}[sev]
+            badge(
+                f"Imbalance Ratio: **{e['ratio']:.2f}** — {sev} imbalance  |  "
+                f"Dominant group: **{e['dominant_value']}** ({e['dominant_pct']:.1f}%)"
+            )
+            dist = e["distribution"]
+            if dist:
+                df_dist = pd.DataFrame(
+                    [{"Group": str(k), "% of Dataset": round(v, 2)} for k, v in dist.items()]
+                ).sort_values("% of Dataset", ascending=False)
+                st.bar_chart(df_dist.set_index("Group"))
 
 
 # ---------------------------------------------------------------------------

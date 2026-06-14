@@ -120,14 +120,15 @@ def _apply_single_mitigation(
     # Fairness comparison against baseline
     if result.get("status") == "success" and result.get("output_file"):
         import pandas as pd
-        
-        # We need a copy of the baseline so we can merge intersectional pairs into it
-        baseline_raw = ctx["results"].get("4_imbalance", {}).get("baseline_fairness_metrics", {})
-        baseline = dict(baseline_raw)
-        
-        analyzed_cols = list(ctx["results"].get("4_imbalance", {}).get("analyzed_columns", []))
-        
+
+        # Use stage 4.5 (Target Fairness) as the baseline — it is the authoritative
+        # pre-mitigation fairness measurement.
         target_fairness = ctx["results"].get("4_5_target_fairness", {})
+        baseline_raw = target_fairness.get("single_attribute_ml_results") or {}
+        baseline = dict(baseline_raw)
+
+        analyzed_cols = list(target_fairness.get("analyzed_sensitive_columns") or [])
+
         intersectional_ml = target_fairness.get("intersectional_ml_results", {})
         selected_pairs = ctx.get("selected_pairs", [])
         

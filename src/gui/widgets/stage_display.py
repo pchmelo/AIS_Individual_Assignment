@@ -423,12 +423,13 @@ def _render_single_method_mitigation(stage_result: dict):
     _render_mitigation_summary(mitigation_result)
     _render_distribution_comparison(mitigation_result)
     _render_imbalance_improvement(comparison_result)
+    _render_sensitive_attribute_comparison(comparison_result)
 
     fairness_comp = stage_result.get("fairness_comparison") or mitigation_result.get("fairness_comparison")
     if fairness_comp:
         st.markdown("---")
         render_mitigated_fairness_table(fairness_comp.get("mitigated_metrics", {}), title="Evaluated Fairness Metrics")
-        
+
         render_mitigation_scorecard(fairness_comp, comparison_result)
 
         st.markdown("---")
@@ -459,13 +460,14 @@ def _render_method_detail(method: str, method_result: dict):
     _render_distribution_comparison(mitigation_result)
 
     _render_imbalance_improvement(comparison_result)
+    _render_sensitive_attribute_comparison(comparison_result)
 
     if method_result.get("fairness_comparison"):
         fairness_comp = method_result["fairness_comparison"]
-        
+
         st.markdown("---")
         render_mitigated_fairness_table(fairness_comp.get("mitigated_metrics", {}), title=f"Evaluated Fairness Metrics ({method})")
-        
+
         render_mitigation_scorecard(fairness_comp, comparison_result)
 
         st.markdown("---")
@@ -534,6 +536,54 @@ def _render_distribution_comparison(mitigation_result: dict):
 
     df = pd.DataFrame(rows)
     st.dataframe(df, width="stretch", hide_index=True)
+
+
+def _render_sensitive_attribute_comparison(comparison_result: dict):
+    """Render before/after group distributions for each sensitive attribute (Stage 4 view)."""
+    sensitive_attrs = comparison_result.get("sensitive_attributes", {})
+    if not sensitive_attrs:
+        return
+
+    st.markdown("---")
+    st.markdown("#### Sensitive Attribute Distribution — Before vs After")
+    st.caption(
+        "Shows how the proportion of each demographic group changed in the mitigated dataset "
+        "compared to the original. Large shifts may indicate the mitigation altered group "
+        "representation."
+    )
+
+    for attr, groups in sensitive_attrs.items():
+        with st.expander(f"**{attr}** — group distribution change", expanded=False):
+            rows = []
+            for group_val, stats in groups.items():
+                orig_pct = stats.get("original_percentage", 0)
+                mit_pct = stats.get("mitigated_percentage", 0)
+                change_pct = mit_pct - orig_pct
+                rows.append({
+                    "Group": str(group_val),
+                    "Before (count)": stats.get("original_count", 0),
+                    "Before (%)": round(orig_pct, 2),
+                    "After (count)": stats.get("mitigated_count", 0),
+                    "After (%)": round(mit_pct, 2),
+                    "Δ pp": round(change_pct, 2),
+                })
+
+            if rows:
+                df = pd.DataFrame(rows).sort_values("Before (%)", ascending=False)
+                st.dataframe(
+                    df,
+                    hide_index=True,
+                    width="stretch",
+                    column_config={
+                        "Before (%)": st.column_config.NumberColumn("Before (%)", format="%.2f%%"),
+                        "After (%)": st.column_config.NumberColumn("After (%)", format="%.2f%%"),
+                        "Δ pp": st.column_config.NumberColumn(
+                            "Δ pp",
+                            format="%+.2f",
+                            help="Percentage-point change in group representation after mitigation.",
+                        ),
+                    },
+                )
 
 
 def _render_imbalance_improvement(comparison_result: dict):

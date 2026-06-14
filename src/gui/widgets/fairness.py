@@ -501,7 +501,7 @@ def render_fairness_comparison_board(comparison_data: dict, method_name: str = "
                         mv = grp.get(f"mitigated_{sel_key}")
                         dv = grp.get(f"delta_{sel_key}")
                         row = {"Group": grp["group"].replace("_", " + ")}
-                        row["Before (Stage 4)"] = round(float(bv), 4) if bv is not None else None
+                        row["Before Mitigation"] = round(float(bv), 4) if bv is not None else None
                         row["After (Mitigated)"] = round(float(mv), 4) if mv is not None else None
                         if dv is not None and higher_better is not None:
                             arrow = "↑" if dv > 0 else ("↓" if dv < 0 else "=")
@@ -529,8 +529,8 @@ def render_fairness_comparison_board(comparison_data: dict, method_name: str = "
                                     "Group",
                                     help="Demographic group. Each row represents a distinct subpopulation within this sensitive attribute.",
                                 ),
-                                "Before (Stage 4)": st.column_config.NumberColumn(
-                                    "Before (Stage 4)",
+                                "Before Mitigation": st.column_config.NumberColumn(
+                                    "Before Mitigation",
                                     format="%.4f",
                                     help=f"{sel_metric_label} for this group in the original dataset (Stage 4 baseline), before any mitigation was applied.",
                                 ),
@@ -592,7 +592,7 @@ def render_fairness_comparison_board(comparison_data: dict, method_name: str = "
                             rows_v2.append({
                                 "Metric": m_label,
                                 "Ideal Value": ideal,
-                                "Before (Stage 4)": bv_str,
+                                "Before Mitigation": bv_str,
                                 "After (Mitigated)": mv_str,
                                 "Change": change_str,
                                 "_help": m_help,
@@ -615,8 +615,8 @@ def render_fairness_comparison_board(comparison_data: dict, method_name: str = "
                                     width="medium",
                                     help="The target value this metric should reach in a perfectly fair, accurate model.",
                                 ),
-                                "Before (Stage 4)": st.column_config.TextColumn(
-                                    "Before (Stage 4)",
+                                "Before Mitigation": st.column_config.TextColumn(
+                                    "Before Mitigation",
                                     help=f"Value for the '{selected_group}' group in the original dataset, before {method_name} was applied.",
                                 ),
                                 "After (Mitigated)": st.column_config.TextColumn(

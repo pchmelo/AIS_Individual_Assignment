@@ -194,10 +194,14 @@ reports/*
 tmp/
 temp/
 *.tmp
+*.tmp.*
 *.bak
 *.swp
 *.swo
 *~
+
+# Pipeline-generated chained discretized datasets
+src/data/*_discretized_discretized*.csv
 
 # API keys and secrets
 .env.local
