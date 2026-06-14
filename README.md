@@ -22,6 +22,11 @@ An AI-agent pipeline for evaluating datasets on data quality and fairness concer
 *Each selected mitigation technique produces a transformed dataset variant; tools recompute fairness statistics on every variant; the AI agent compares them against the original statistics and produces a comparative mitigation report.*
 </div>
 
+## Demo
+
+A video demonstration of the full GUI workflow is available on YouTube:
+[https://youtu.be/_USTmBhzDkI](https://youtu.be/_USTmBhzDkI)
+
 ## Documentation
 
 | Guide | Description |
