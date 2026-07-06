@@ -44,7 +44,7 @@ models:
   # ---- Free OpenRouter Model (Recommended for testing) ----
   openrouter-free:
     provider: openrouter
-    model: "openrouter/owl-alpha"
+    model: "poolside/laguna-m.1:free"
     #model: "arcee-ai/trinity-large-preview:free"
     #model: "nvidia/nemotron-3-super-120b-a12b:free"
     base_url: "https://openrouter.ai/api/v1"
