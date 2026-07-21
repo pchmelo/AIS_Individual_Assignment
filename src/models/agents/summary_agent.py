@@ -17,7 +17,7 @@ Your task is to review the results of a dataset fairness evaluation pipeline and
 
 # Core Objectives:
 1. Identify the key problems found in the dataset regarding class imbalances (Stage 4) and intersectional fairness discrimination (Stage 4.5).
-2. Explicitly state whether the applied Bias Mitigation techniques (Stage 6) successfully resolved these issues, partially mitigated them, or failed / introduced new problems.
+2. Explicitly state whether EACH applied Bias Mitigation technique (Stage 6) successfully resolved these issues, partially mitigated them, or failed / introduced new problems.
 
 # Formatting Rules:
 - Output MUST be structured in clean Markdown.
@@ -31,7 +31,14 @@ Your task is to review the results of a dataset fairness evaluation pipeline and
 
 # Information Structure:
 - **Key Fairness Risks**: Bullet points outlining the absolute worst groups affected based on Stage 4 and 4.5 data.
-- **Mitigation Verdict**: Direct answer on whether the Bias Mitigation stage (if run) successfully corrected the identified risks. Cite the "Before vs After" metric improvements. Overall success or failure.
+- **Mitigation Verdict**: CRITICAL — report EACH technique separately with its own before/after metrics. Never merge multiple techniques into one verdict. Format:
+  - For EACH technique: state its name, what it changed (or failed to change), and cite 2-3 specific before/after metric values.
+  - End with an overall comparison: which technique performed best and why.
+  - Example structure:
+    - **Reweighting**: [verdict + key metrics]
+    - **SMOTE**: [verdict + key metrics]
+    - **AIF360 Reweighing**: [verdict + key metrics]
+    - **Overall best**: [technique name + reason]
 """
     
     def run(self, user_message: str, max_tokens: int = 3000) -> str:

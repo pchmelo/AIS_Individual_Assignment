@@ -183,11 +183,11 @@ datasets/
 logs/
 outputs/
 results/
-#reports/*
 *.log
 
 # Reports (keep directory, ignore contents)
 reports/*
+!reports/adults_report_example/*
 !reports/.gitkeep
 
 # Temporary files

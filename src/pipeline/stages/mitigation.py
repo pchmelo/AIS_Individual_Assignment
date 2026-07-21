@@ -18,6 +18,7 @@ class MitigationStage(BaseStageExecutor):
         "SMOTE": "smote",
         "Random Oversampling": "oversampling",
         "Random Undersampling": "undersampling",
+        "AIF360 Reweighing": "aif360_reweighing",
     }
 
     def __call__(self, stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
@@ -51,6 +52,7 @@ class MitigationStage(BaseStageExecutor):
                         mitigated_dataset=mitigation_result.get("output_file"),
                         sensitive_columns=sensitive_cols,
                         agent=ctx["pipeline"].recommendation_agent,
+                        fairness_comparison=mitigation_result.get("fairness_comparison"),
                     )
                     all_results[method_name] = {
                         "status": "success",
@@ -114,6 +116,10 @@ def _apply_single_mitigation(
             sampling_strategy=extra_params.get("sampling_strategy", "auto"),
             **shared,
         )
+    elif method == "aif360_reweighing":
+        if not sensitive_columns:
+            return {"status": "error", "message": "Sensitive columns required for AIF360 Reweighing"}
+        result = bias_tools.apply_aif360_reweighing(sensitive_columns=sensitive_columns, **shared)
     else:
         return {"status": "error", "message": f"Unknown method: {method}"}
 
@@ -181,6 +187,7 @@ def _compare_datasets(
     mitigated_dataset: str,
     sensitive_columns: list,
     agent,
+    fairness_comparison: Dict[str, Any] = None,
 ) -> Dict[str, Any]:
     """Compare original vs mitigated dataset and have the agent analyse."""
 
@@ -191,15 +198,29 @@ def _compare_datasets(
         sensitive_columns=sensitive_columns,
     )
 
+    fairness_section = ""
+    if fairness_comparison and fairness_comparison.get("per_attribute_comparison"):
+        fairness_section = (
+            "\n\n## Fairness Metric Comparison (ML model trained on mitigated data)\n"
+            "IMPORTANT: For weight-based techniques the dataset row counts are unchanged, "
+            "but the ML model below was trained WITH the sample weights applied — these "
+            "metrics reflect the real fairness impact of the mitigation.\n\n"
+            f"{safe_json_dumps(fairness_comparison)}"
+        )
+
     prompt = (
         "Analyze the comparison between original and mitigated datasets:\n\n"
-        f"{safe_json_dumps(result)}\n\n"
+        f"{safe_json_dumps(result)}"
+        f"{fairness_section}\n\n"
         "Provide a detailed analysis:\n"
         "1. Was the bias mitigation effective? (Yes/No and why)\n"
         "2. What improved? (specific metrics and percentages)\n"
         "3. What remained problematic? (if any)\n"
         "4. Recommendations for further improvements\n\n"
-        "Be specific with numbers and provide actionable insights."
+        "IMPORTANT: If this is a weight-based technique (uses_weights=true), focus your "
+        "analysis on the Fairness Metric Comparison section above — the raw dataset "
+        "distribution will appear unchanged, but the weighted model results show the "
+        "real effect. Do NOT conclude 'nothing changed' based on row counts alone."
     )
     result["agent_analysis"] = agent.run(prompt)
     return result

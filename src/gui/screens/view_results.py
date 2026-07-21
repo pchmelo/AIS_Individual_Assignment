@@ -329,7 +329,7 @@ def _render_stage_content(stage_content: str):
 # ======================================================================
 
 def _render_recommendations_tab(report_file: str):
-    st.markdown("### Stage 5: Recommendations")
+    st.markdown("### Stage 5: Recommendation Synthesis")
     if not os.path.exists(report_file):
         st.info("Report file not found.")
         return
@@ -431,6 +431,8 @@ def _render_bias_mitigation_tab(report_dir: str, report_file: str):
         lower = csv_file.lower()
         if "smote" in lower:
             methods_data["SMOTE"] = csv_file
+        elif "aif360_reweighed" in lower:
+            methods_data["AIF360 Reweighing"] = csv_file
         elif "reweighted" in lower:
             methods_data["Reweighting"] = csv_file
         elif "oversampled" in lower:

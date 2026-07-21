@@ -6,6 +6,7 @@ import os
 import warnings
 from imblearn.over_sampling import SMOTE, RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
+from sklearn.preprocessing import LabelEncoder
 
 warnings.simplefilter(action='ignore', category=Warning)
 
@@ -120,11 +121,38 @@ class BiasMitigationTools(ToolManager):
             }
         )
         
+        self.tool_apply_aif360_reweighing = Tool(
+            name="apply_aif360_reweighing",
+            function=self.apply_aif360_reweighing,
+            description=(
+                "Apply AIF360's Reweighing algorithm (Kamiran & Calders, 2012) to assign "
+                "sample weights that minimise statistical parity difference between privileged "
+                "and unprivileged groups. More fairness-aware than generic reweighting: it "
+                "jointly considers the sensitive attribute and the target label to compute "
+                "weights, rather than balancing classes independently."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "dataset_name": {"type": "string", "description": "Name of the dataset"},
+                    "target_column": {"type": "string", "description": "Target column name"},
+                    "sensitive_columns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Sensitive columns to reweigh against"
+                    },
+                    "output_dir": {"type": "string", "description": "Directory to save the result"}
+                },
+                "required": ["dataset_name", "target_column", "sensitive_columns", "output_dir"]
+            }
+        )
+
         self.list_of_tools = [
             self.tool_apply_reweighting,
             self.tool_apply_smote,
             self.tool_apply_oversampling,
             self.tool_apply_undersampling,
+            self.tool_apply_aif360_reweighing,
             self.tool_compare_datasets
         ]
         self._build_tool_mappings()
@@ -375,6 +403,133 @@ class BiasMitigationTools(ToolManager):
         except Exception as e:
             return {"status": "error", "message": str(e)}
     
+    def apply_aif360_reweighing(self, dataset_name: str, target_column: str,
+                                sensitive_columns: list, output_dir: str) -> dict:
+        try:
+            import logging
+            import os as _os
+            _os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+            _os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+            _root = logging.getLogger()
+            _prev = _root.level
+            _root.setLevel(logging.ERROR)
+            try:
+                from aif360.datasets import BinaryLabelDataset
+                from aif360.algorithms.preprocessing import Reweighing as AIF360Reweighing
+            finally:
+                _root.setLevel(_prev)
+        except ImportError:
+            return {"status": "error", "message": "aif360 is not installed. Run: pip install aif360"}
+
+        try:
+            path = self._resolve_path(dataset_name)
+            df = pd.read_csv(path)
+
+            if target_column not in df.columns:
+                return {"status": "error", "message": f"Target column '{target_column}' not found"}
+
+            missing = [c for c in sensitive_columns if c not in df.columns]
+            if missing:
+                return {"status": "error", "message": f"Sensitive columns not found: {missing}"}
+
+            df_enc = df.copy()
+
+            # Encode target as 0/1: minority class → 1 (favorable)
+            target_vals = df_enc[target_column].unique()
+            if df_enc[target_column].dtype == object or len(target_vals) == 2:
+                counts = df_enc[target_column].value_counts()
+                favorable_label_str = counts.idxmin()
+                df_enc[target_column] = (df_enc[target_column] == favorable_label_str).astype(float)
+            favorable_label = 1.0
+            unfavorable_label = 0.0
+
+            # Encode sensitive columns; privileged = majority group per column
+            le_sensitive: dict = {}
+            privileged_val: dict = {}
+            for col in sensitive_columns:
+                le = LabelEncoder()
+                df_enc[col] = le.fit_transform(df_enc[col].astype(str)).astype(float)
+                le_sensitive[col] = le
+                priv_str = df[col].value_counts().idxmax()
+                privileged_val[col] = float(le.transform([priv_str])[0])
+
+            # Encode remaining string columns so BinaryLabelDataset accepts them
+            for col in df_enc.select_dtypes("object").columns:
+                df_enc[col] = LabelEncoder().fit_transform(df_enc[col].astype(str)).astype(float)
+
+            # If multiple sensitive columns, create a combined binary protected attribute
+            if len(sensitive_columns) == 1:
+                prot_attr = sensitive_columns[0]
+                priv_val = privileged_val[prot_attr]
+                privileged_groups  = [{prot_attr: priv_val}]
+                unprivileged_groups = [
+                    {prot_attr: v}
+                    for v in sorted(df_enc[prot_attr].unique())
+                    if v != priv_val
+                ]
+            else:
+                prot_attr = "_aif360_priv_group"
+                df_enc[prot_attr] = df_enc[sensitive_columns].apply(
+                    lambda row: float(all(
+                        row[c] == privileged_val[c] for c in sensitive_columns
+                    )),
+                    axis=1,
+                )
+                privileged_groups   = [{prot_attr: 1.0}]
+                unprivileged_groups = [{prot_attr: 0.0}]
+
+            aif_ds = BinaryLabelDataset(
+                df=df_enc,
+                label_names=[target_column],
+                protected_attribute_names=[prot_attr],
+                favorable_label=favorable_label,
+                unfavorable_label=unfavorable_label,
+                privileged_protected_attributes=[[privileged_groups[0][prot_attr]]],
+            )
+
+            rw = AIF360Reweighing(
+                unprivileged_groups=unprivileged_groups,
+                privileged_groups=privileged_groups,
+            )
+            rw.fit(aif_ds)
+            ds_transformed = rw.transform(aif_ds)
+
+            # Attach weights to the original (un-encoded) DataFrame
+            df_out = df.copy()
+            df_out["sample_weight"] = ds_transformed.instance_weights
+
+            os.makedirs(output_dir, exist_ok=True)
+            stem = dataset_name.replace(".csv", "")
+            output_path = os.path.join(output_dir, f"{stem}_aif360_reweighed.csv")
+            df_out.to_csv(output_path, index=False)
+
+            weights = df_out["sample_weight"]
+            weight_stats = {
+                "min":    round(float(weights.min()),    4),
+                "max":    round(float(weights.max()),    4),
+                "mean":   round(float(weights.mean()),   4),
+                "median": round(float(weights.median()), 4),
+                "std":    round(float(weights.std()),    4),
+            }
+
+            return {
+                "status": "success",
+                "method": "AIF360 Reweighing (Kamiran & Calders, 2012)",
+                "output_file": output_path,
+                "original_rows": len(df),
+                "new_rows": len(df_out),
+                "weight_statistics": weight_stats,
+                "sensitive_columns_used": sensitive_columns,
+                "note": (
+                    "Sample weights added as 'sample_weight' column. "
+                    "Weights are computed by AIF360 to minimise statistical parity difference "
+                    "between privileged and unprivileged groups."
+                ),
+            }
+
+        except Exception as e:
+            return {"status": "error", "message": f"Error in AIF360 Reweighing: {str(e)}"}
+
     def compare_datasets(self, original_dataset: str, mitigated_dataset: str,
                         target_column: str, sensitive_columns: list) -> dict:
         try:

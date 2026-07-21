@@ -24,22 +24,22 @@ stages:
     description: "Load and validate the dataset file."
 
   - key: "1_objective"
-    name: "Objective Inspection"
+    name: "Objective Validation"
     executor: ObjectiveStage
     agent: inspector_agent
     description: "Verify the evaluation objective."
 
   - key: "2_quality"
-    name: "Data Quality Analysis"
+    name: "Data Quality Inspection"
     executor: QualityStage
     agent: quality_agent
     description: "Analyse missing data & quality issues."
 
   - key: "3_sensitive"
-    name: "Sensitive Attribute Detection"
+    name: "Sensitive Attribute Identification"
     executor: SensitiveDetectionStage
     agent: recommendation_agent
-    description: "Detect protected / sensitive columns."
+    description: "Identify protected / sensitive columns."
     requires_confirmation: true
 
   - key: "3_5_discretization"
@@ -66,7 +66,7 @@ stages:
     requires_target: true
 
   - key: "5_recommendations"
-    name: "Recommendations"
+    name: "Recommendation Synthesis"
     executor: RecommendationsStage
     agent: recommendation_agent
     description: "Generate improvement recommendations."

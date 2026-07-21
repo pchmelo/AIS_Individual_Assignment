@@ -66,7 +66,7 @@ class OpenRouterClient(BaseModelClient):
             "max_tokens": max_tokens,
             # Add middle-out transform to automatically compress prompts exceeding context limit
             "transforms": ["middle-out"],
-            # Exclude reasoning tokens from the response content
+            # Exclude reasoning tokens so thinking-model internals don't leak into responses
             "include_reasoning": False,
         }
         
@@ -96,15 +96,16 @@ class OpenRouterClient(BaseModelClient):
                     raise Exception(f"OpenRouter API Error: Missing 'choices' in response. Response: {result}")
                 
                 message = result["choices"][0]["message"]
-                # Handle reasoning models that return content=null with reasoning field
+                # Use content if non-empty; empty string means the model put output elsewhere
                 content = message.get("content")
-                if content is not None:
+                if content:
                     return content
-                # Fallback to reasoning field for reasoning models (e.g., stepfun)
+                # Fallback to reasoning field for reasoning-only models (e.g. Ling-2.6-1T)
+                # that leave content null/empty and write their full output into reasoning
                 reasoning = message.get("reasoning")
-                if reasoning is not None:
+                if reasoning:
                     return reasoning
-                # If both are None, return empty string
+                # Both empty — return empty string (ask_model will retry)
                 return ""
 
             if response.status_code in retryable_codes and attempt < max_retries:

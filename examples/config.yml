@@ -15,22 +15,30 @@
 
 
 # -----------------------------------------------------------------------------
-# Default Model
+# Mode
 # -----------------------------------------------------------------------------
+# How to launch the application via python example_usage.py.
+#   gui   - Streamlit web interface (requires: pip install -r requirements-gui.txt)
+#   quick - Headless evaluation driven by the settings in this file
+
+mode: "gui"
+
+
+# -----------------------------------------------------------------------------
+# Common Settings (apply to both gui and quick modes)
+# -----------------------------------------------------------------------------
+
+# The target variable for analysis (change as needed)
+target_column: "Income"
+
 # Which model to use by default for all agents.
 # Must match one of the model names defined below.
+default_model: "openrouter-free"
 
-default_model: "openrouter-free"  
-
-
-# -----------------------------------------------------------------------------
-# Models Configuration
-# -----------------------------------------------------------------------------
 # Define available AI models. Supports three providers:
 #   - openrouter: Cloud API with many models (some free)
 #   - gemini: Google's Gemini models
 #   - ollama: Run models locally via Ollama
-
 models:
   # ---- Local Ollama Model ----
   "deepseek-r1:8b":
@@ -44,7 +52,7 @@ models:
   # ---- Free OpenRouter Model (Recommended for testing) ----
   openrouter-free:
     provider: openrouter
-    model: "poolside/laguna-m.1:free"
+    model: "poolside/laguna-xs-2.1:free"
     #model: "arcee-ai/trinity-large-preview:free"
     #model: "nvidia/nemotron-3-super-120b-a12b:free"
     base_url: "https://openrouter.ai/api/v1"
@@ -55,7 +63,7 @@ models:
 
   # ---- Alternative Free OpenRouter Models ----
   # Uncomment to use different free models
-  
+
   # llama-free:
   #   provider: openrouter
   #   model: "meta-llama/llama-3.2-3b-instruct:free"
@@ -95,25 +103,16 @@ models:
   #   provider: gemini
   #   model: "gemini-1.5-pro"
 
-  # ---- Local Ollama Models ----
-# -----------------------------------------------------------------------------
-# Tools Configuration
-# -----------------------------------------------------------------------------
 # Available tool managers. Don't modify unless adding custom tools.
-
 tools:
   fairness:
     class: "FairnessTools"
     description: "Tools for fairness analysis and dataset inspection"
-  
+
   bias_mitigation:
     class: "BiasMitigationTools"
     description: "Tools for bias mitigation techniques (SMOTE, reweighting, etc.)"
 
-
-# -----------------------------------------------------------------------------
-# Agents Configuration
-# -----------------------------------------------------------------------------
 # Agents that perform different tasks in the pipeline.
 # Each agent can optionally specify its own model.
 #
@@ -121,7 +120,6 @@ tools:
 #   - FunctionCallerAgent: Executes tools/functions
 #   - DataAnalystAgent: Analyzes data and provides insights
 #   - ConversationalAgent: General conversation, no tools
-
 agents:
   file_parser:
     type: FunctionCallerAgent
@@ -129,116 +127,87 @@ agents:
     tools: [fairness]
     stages: [parsing]
     reflect_on_tool_use: true
-  
+
   inspector:
     type: FunctionCallerAgent
     tools: [fairness]
     stages: [inspection]
     reflect_on_tool_use: true
-  
+
   quality_analyst:
     type: DataAnalystAgent
     tools: [fairness]
     stages: [quality_analysis]
-  
+
   fairness_analyst:
     type: DataAnalystAgent
     tools: [fairness]
     stages: [fairness_analysis]
-  
+
   bias_mitigator:
     type: FunctionCallerAgent
     tools: [bias_mitigation]
     stages: [mitigation]
     reflect_on_tool_use: true
-  
+
   recommendation:
     type: ConversationalAgent
     tools: []
     stages: [recommendation]
 
-
-# -----------------------------------------------------------------------------
-# Pipeline Configuration
-# -----------------------------------------------------------------------------
 # Defines the order of evaluation stages.
 # Each stage can have one or more agents.
-
 pipeline:
   stages:
     - name: parsing
       description: "Parse and load the dataset"
       agents: [file_parser]
-    
+
     - name: inspection
       description: "Initial dataset inspection and validation"
       agents: [inspector]
-    
+
     - name: quality_analysis
       description: "Analyze data quality issues"
       agents: [quality_analyst]
-    
+
     - name: fairness_analysis
       description: "Analyze fairness and bias metrics"
       agents: [fairness_analyst]
-    
+
     - name: mitigation
       description: "Apply bias mitigation techniques"
       agents: [bias_mitigator]
-    
+
     - name: recommendation
       description: "Generate recommendations and summary"
       agents: [recommendation]
 
-
-# -----------------------------------------------------------------------------
-# Evaluation Settings
-# -----------------------------------------------------------------------------
-# Fine-tune evaluation behavior.
-
-# How to launch the application via python example_usage.py.
-#   gui   - Streamlit web interface (requires: pip install -r requirements-gui.txt)
-#   quick - Headless evaluation driven by the settings in this file
-mode: gui
-
-# The target variable for analysis (change as needed)
-target_column: "Income"  
-
-# If true, runs a secondary agent over generated analysis to improve readability
-use_humanizer: false 
-
-# If true, generates detailed_metrics_report.md and .pdf with comprehensive group metrics
-generate_detailed_report: true
-
-# If true, runs a final agent to synthesize all findings into a top-level summary
-generate_executive_summary: true
-
 sensitive_attribute_analysis:
   # Type options:
-  #   - auto: The agent will automatically detect which sensitive attributes to 
+  #   - auto: The agent will automatically detect which sensitive attributes to
   #           analyze based on potential fairness concerns and dataset characteristics.
   #   - restricted: Analyze only the specific attributes listed below.
   type: auto
   # Only used when type is "restricted". List the column names to analyze:
   attributes: ["Sex", "Race", "Age"]
-  
-  
+
   # Enable or disable discretization of continuous sensitive attributes.
-  discretization: enable  
-  
-  # auto: The agent receive information from the collum (max value, min value, mean, median, standard deviation, collum name) and from this can decide the bins (with its range) or the number of bins.
-  # equal_width/equal_frequency: The user pass the number of bins and method (equal_width or equal_frequency).
+  discretization: enable
+
+  # auto: The agent receives information from the column (max value, min value, mean, median,
+  #       standard deviation, column name) and decides the bins (with its range) or number of bins.
+  # equal_width/equal_frequency: The user passes the number of bins and method.
   method: auto
   number_of_bins: 5
 
   # Minimum number of unique values for a numeric column to be considered continuous.
   # Columns with fewer unique values are treated as already categorical.
   continuous_threshold: 10
-  
 
 pair_evaluation:
   # Type options:
-  #   - auto: The agent will automatically select which sensitive attribute pairs 
+  #   - auto: The agent will automatically select which sensitive attribute pairs
   #           to analyze based on potential fairness concerns (limited by max_pairs).
   #   - restricted: Analyze only the specific pairs listed below.
   type: auto
@@ -250,8 +219,15 @@ pair_evaluation:
 
 mitigation_techniques:
   # List of bias mitigation techniques to apply during the mitigation stage.
-  # Options include: "reweighting", "resampling", "adversarial_debiasing", "preprocessing", "inprocessing", "postprocessing"
-  techniques: ["reweighting", "resampling"]
+  # Available options:
+  #   "Reweighting"          - Generic sample reweighting to balance sensitive groups
+  #   "SMOTE"                - Synthetic Minority Over-sampling Technique
+  #   "Random Oversampling"  - Random duplication of minority-class samples
+  #   "Random Undersampling" - Random removal of majority-class samples
+  #   "AIF360 Reweighing"    - Fairness-aware sample weights via AIF360 (Kamiran & Calders, 2012).
+  #                            Directly minimises statistical parity difference between groups.
+  #                            Requires: pip install aif360 BlackBoxAuditing
+  techniques: ["Reweighting", "SMOTE", "AIF360 Reweighing"]
 
 ml_evaluation:
   # The ML model type to use for target fairness and mitigation comparisons.
@@ -259,25 +235,25 @@ ml_evaluation:
   model_type: "Random Forest"
 
   # Default parameters for each ML model
-  # Default parameters for Random Forest
-  # "Random Forest":
-  #   n_estimators: 100
-  #   max_depth: null
-  # Default parameters for Gradient Boosting
-  # "Gradient Boosting":
-  #   n_estimators: 100
-  #   learning_rate: 0.1
-  #   max_depth: 3
-  # Default parameters for Logistic Regression
-  # "Logistic Regression":
-  #   C: 1.0
-  #   penalty: "l2"
-  # "SVC":
-  #   C: 1.0
-  #   kernel: "rbf"
-
+  # "Random Forest":   n_estimators: 100, max_depth: null
+  # "Gradient Boosting": n_estimators: 100, learning_rate: 0.1, max_depth: 3
+  # "Logistic Regression": C: 1.0, penalty: "l2"
+  # "SVC": C: 1.0, kernel: "rbf"
   model_params:
     "Random Forest":
       n_estimators: 100
-      max_depth: null 
+      max_depth: null
 
+
+# -----------------------------------------------------------------------------
+# Headless Settings (apply to quick mode only)
+# -----------------------------------------------------------------------------
+
+# If true, runs a secondary agent over generated analysis to improve readability
+use_humanizer: false
+
+# If true, generates detailed_metrics_report.md and .pdf with comprehensive group metrics
+generate_detailed_report: true
+
+# If true, runs a final agent to synthesize all findings into a top-level summary
+generate_executive_summary: true

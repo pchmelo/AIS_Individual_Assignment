@@ -492,7 +492,7 @@ def _render_stage_controls(pipeline, stage):
     # Stage 3 — Sensitive Attribute Detection
     # ------------------------------------------------------------------
     if stage.key == "3_sensitive":
-        with st.expander("Sensitive Attribute Detection — configure before running", expanded=True):
+        with st.expander("Sensitive Attribute Identification — configure before running", expanded=True):
             st.caption(
                 "**Auto**: the AI detects sensitive columns, then you can review and filter the results.  "
                 "**Manual**: you choose the sensitive attributes directly (skips AI detection)."
@@ -635,7 +635,7 @@ def _render_stage_controls(pipeline, stage):
         preconfigured = list(mit_cfg.get("methods", {}).keys())
         with st.expander("Bias Mitigation — configure before running", expanded=True):
             st.caption("Select techniques to apply. Leave all unchecked to skip mitigation.")
-            _options = ["Reweighting", "SMOTE", "Random Oversampling", "Random Undersampling"]
+            _options = ["Reweighting", "SMOTE", "Random Oversampling", "Random Undersampling", "AIF360 Reweighing"]
             for opt in _options:
                 st.checkbox(opt, value=(opt in preconfigured), key=f"inline_mit_{opt}")
 
@@ -813,7 +813,7 @@ def _apply_inline_stage_controls(pipeline, stage):
 
     # Stage 6 — bias mitigation
     elif stage.key == "6_bias_mitigation":
-        _options = ["Reweighting", "SMOTE", "Random Oversampling", "Random Undersampling"]
+        _options = ["Reweighting", "SMOTE", "Random Oversampling", "Random Undersampling", "AIF360 Reweighing"]
         chosen = {opt: {} for opt in _options if ss.get(f"inline_mit_{opt}", False)}
         if chosen:
             pipeline._pipeline_ctx["mitigation_config"] = {"methods": chosen}
@@ -867,6 +867,9 @@ def _apply_user_text_overrides(pipeline, stage, user_text):
             "oversampling": "Random Oversampling",
             "random undersampling": "Random Undersampling",
             "undersampling": "Random Undersampling",
+            "aif360 reweighing": "AIF360 Reweighing",
+            "aif360": "AIF360 Reweighing",
+            "reweighing": "AIF360 Reweighing",
         }
         chosen = {}
         for part in text.split(","):
@@ -887,7 +890,7 @@ def _get_confirmation_hint(stage, pipeline):
 
     if stage.key == "3_sensitive":
         return (
-            "**Next: Sensitive Attribute Detection**\n\n"
+            "**Next: Sensitive Attribute Identification**\n\n"
             "Use the panel above to choose the detection mode:\n"
             "- **Auto**: the AI will detect sensitive columns — "
             "you can review and filter the identified list afterwards.\n"
@@ -932,7 +935,7 @@ def _get_confirmation_hint(stage, pipeline):
         return (
             "**Next: Bias Mitigation**\n\n"
             "Use the panel above to select which mitigation techniques to apply "
-            "(Reweighting, SMOTE, oversampling / undersampling). "
+            "(Reweighting, SMOTE, oversampling / undersampling, or AIF360 Reweighing). "
             "Leave all unchecked to skip mitigation entirely, then press **Forward**."
         )
 

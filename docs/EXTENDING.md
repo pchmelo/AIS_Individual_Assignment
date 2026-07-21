@@ -1,6 +1,6 @@
 # Extensibility Guide
 
-This document covers all four extension points in the Fairness Evaluation System: Tools, Agent types, LLM Backends, and Pipeline Stages. Each section includes the abstract interface, a complete implementation template, and the registration steps required to wire the new component into the runtime.
+This document covers all four extension points in EquiAudit: Tools, Agent types, LLM Backends, and Pipeline Stages. Each section includes the abstract interface, a complete implementation template, and the registration steps required to wire the new component into the runtime.
 
 
 ## Architecture Overview

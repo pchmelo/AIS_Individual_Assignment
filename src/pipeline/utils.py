@@ -18,6 +18,9 @@ TECHNIQUE_DISPLAY: Dict[str, str] = {
     "smote": "SMOTE",
     "oversampling": "Random Oversampling",
     "undersampling": "Random Undersampling",
+    "aif360 reweighing": "AIF360 Reweighing",
+    "aif360": "AIF360 Reweighing",
+    "aif360_reweighing": "AIF360 Reweighing",
 }
 
 
@@ -34,7 +37,7 @@ def format_mitigation_markdown(lines: List[str], stage_data: Dict[str, Any]) -> 
 
     for method in applied:
         mr = methods_results.get(method, {})
-        lines.append(f"### {method.replace('_', ' ').title()}")
+        lines.append(f"### {method}")
         lines.append("")
 
         if mr.get("status") == "error":
@@ -63,7 +66,7 @@ def format_mitigation_markdown(lines: List[str], stage_data: Dict[str, Any]) -> 
         if fairness_comparison:
             mitigated_metrics = fairness_comparison.get("mitigated_metrics", {})
             if mitigated_metrics and mitigated_metrics.get("status") == "success":
-                format_ml_model_markdown(lines, mitigated_metrics, title=f"Evaluation ML Model ({method})")
+                format_ml_model_markdown(lines, mitigated_metrics, title=f"Evaluation ML Model ({method})", header_level=4)
 
         comparison_result = mr.get("comparison_result") or mitigation_result.get("comparison_result")
         if comparison_result:
@@ -103,8 +106,133 @@ def format_mitigation_markdown(lines: List[str], stage_data: Dict[str, Any]) -> 
             if "agent_analysis" in comparison_result:
                 lines.append("#### Agent Analysis")
                 lines.append("")
-                lines.append(comparison_result["agent_analysis"])
+                agent_text = comparison_result["agent_analysis"]
+                # Strip the redundant h1 title the LLM generates (e.g. "# Detailed Analysis...")
+                # The method is already identified by the ### heading above.
+                agent_lines = agent_text.split('\n')
+                if agent_lines and agent_lines[0].startswith('# ') and not agent_lines[0].startswith('## '):
+                    agent_lines = agent_lines[1:]
+                    while agent_lines and not agent_lines[0].strip():
+                        agent_lines = agent_lines[1:]
+                    agent_text = '\n'.join(agent_lines)
+                lines.append(agent_text)
                 lines.append("")
+
+    _format_mitigation_comparison(lines, methods_results, applied)
+
+
+def _format_mitigation_comparison(
+    lines: List[str], methods_results: Dict[str, Any], applied: List[str]
+) -> None:
+    """Append a cross-method comparative summary table at the end of Stage 6."""
+    method_data: Dict[str, Any] = {}
+    baseline_perf: Dict[str, Any] = {}
+
+    for method in applied:
+        mr = methods_results.get(method, {})
+        if mr.get("status") == "error":
+            continue
+        fc = mr.get("fairness_comparison") or mr.get("mitigation_result", {}).get("fairness_comparison")
+        if not fc:
+            continue
+
+        if not baseline_perf:
+            bm = fc.get("baseline_metrics", {})
+            baseline_perf = bm.get("performance", {})
+
+        mm = fc.get("mitigated_metrics", {})
+        method_data[method] = {
+            "perf": mm.get("performance", {}),
+            "per_attr": fc.get("per_attribute_comparison", {}),
+        }
+
+    if not method_data:
+        return
+
+    active = [m for m in applied if m in method_data]
+
+    lines.append("### Method Comparison")
+    lines.append("")
+    lines.append("Side-by-side summary of all mitigation techniques applied.")
+    lines.append("")
+
+    # Model performance table
+    lines.append("#### Model Performance")
+    lines.append("")
+    col_seps = "|----------" * len(active)
+    lines.append("| Metric | Baseline |" + "".join(f" {m} |" for m in active))
+    lines.append(f"|--------|----------{col_seps}|")
+
+    for key, label in [("accuracy", "Accuracy"), ("f1_macro", "F1 Macro"), ("f1_weighted", "F1 Weighted")]:
+        bv = baseline_perf.get(key)
+        b_str = f"{bv:.4f}" if isinstance(bv, float) else "N/A"
+        row = f"| {label} | {b_str} |"
+        for m in active:
+            v = method_data[m]["perf"].get(key)
+            row += f" {f'{v:.4f}' if isinstance(v, float) else 'N/A'} |"
+        lines.append(row)
+    lines.append("")
+
+    # Collect all attributes preserving first-seen order
+    all_attrs: List[str] = []
+    seen: set = set()
+    for m in active:
+        for attr in method_data[m]["per_attr"]:
+            if attr not in seen:
+                all_attrs.append(attr)
+                seen.add(attr)
+
+    if not all_attrs:
+        return
+
+    def _attr_display(attr: str) -> str:
+        return attr.replace("_combined", "").replace("_", " + ")
+
+    def _spd(m: str, attr: str) -> str:
+        v = method_data[m]["per_attr"].get(attr, {}).get("statistical_parity_difference", {}).get("mitigated")
+        return f"{float(v):.4f}" if v is not None else "N/A"
+
+    def _di(m: str, attr: str) -> str:
+        v = method_data[m]["per_attr"].get(attr, {}).get("disparate_impact", {}).get("mitigated")
+        return f"{float(v):.4f}" if v is not None else "N/A"
+
+    def _base_spd(attr: str) -> str:
+        for m in active:
+            v = method_data[m]["per_attr"].get(attr, {}).get("statistical_parity_difference", {}).get("baseline")
+            if v is not None:
+                return f"{float(v):.4f}"
+        return "N/A"
+
+    def _base_di(attr: str) -> str:
+        for m in active:
+            v = method_data[m]["per_attr"].get(attr, {}).get("disparate_impact", {}).get("baseline")
+            if v is not None:
+                return f"{float(v):.4f}"
+        return "N/A"
+
+    # SPD table
+    lines.append("#### Statistical Parity Difference (lower is better)")
+    lines.append("")
+    lines.append("| Sensitive Attribute | Baseline |" + "".join(f" {m} |" for m in active))
+    lines.append(f"|---------------------|----------{col_seps}|")
+    for attr in all_attrs:
+        row = f"| {_attr_display(attr)} | {_base_spd(attr)} |"
+        for m in active:
+            row += f" {_spd(m, attr)} |"
+        lines.append(row)
+    lines.append("")
+
+    # DI table
+    lines.append("#### Disparate Impact (higher is better, ideal >= 0.8)")
+    lines.append("")
+    lines.append("| Sensitive Attribute | Baseline |" + "".join(f" {m} |" for m in active))
+    lines.append(f"|---------------------|----------{col_seps}|")
+    for attr in all_attrs:
+        row = f"| {_attr_display(attr)} | {_base_di(attr)} |"
+        for m in active:
+            row += f" {_di(m, attr)} |"
+        lines.append(row)
+    lines.append("")
 
 
 def _format_stage_2_tool_markdown(lines: List[str], tool_result: Dict[str, Any]) -> None:
@@ -306,7 +434,7 @@ def _get_csv_folder_and_prefix(title: str):
         return "other_fairness", prefix
 
 
-def format_fairness_board_markdown(lines: List[str], ml_results: Dict[str, Any], title: str = "") -> None:
+def format_fairness_board_markdown(lines: List[str], ml_results: Dict[str, Any], title: str = "", header_level: int = 4) -> None:
     """Format the fairness evaluation metrics into a markdown table, omitting raw data."""
     fairness = ml_results.get("fairness_analysis", {})
     if not fairness:
@@ -314,7 +442,7 @@ def format_fairness_board_markdown(lines: List[str], ml_results: Dict[str, Any],
 
     folder_name, prefix = _get_csv_folder_and_prefix(title)
 
-    lines.append("#### Evaluated Fairness Metrics")
+    lines.append(f"{'#' * header_level} Evaluated Fairness Metrics")
     lines.append("")
     lines.append("| Sensitive Attribute | Stat Parity Diff | Disparate Impact | Highest Rate Group | Lowest Rate Group |")
     lines.append("|---------------------|------------------|------------------|--------------------|-------------------|")
@@ -333,26 +461,26 @@ def format_fairness_board_markdown(lines: List[str], ml_results: Dict[str, Any],
     lines.append("")
 
 
-def format_ml_model_markdown(lines: List[str], ml_results: Dict[str, Any], title: str = "Machine Learning Evaluation Model") -> None:
+def format_ml_model_markdown(lines: List[str], ml_results: Dict[str, Any], title: str = "Machine Learning Evaluation Model", header_level: int = 3) -> None:
     """Format ML model details into markdown (appends to *lines*)."""
     if not ml_results or ml_results.get("status") != "success":
         return
     model_type = ml_results.get("model_type")
     if not model_type:
         return
-        
-    lines.append(f"### {title}")
+
+    lines.append(f"{'#' * header_level} {title}")
     lines.append("")
     lines.append(f"- **Algorithm:** {model_type}")
-    
+
     test_size = ml_results.get("test_size")
     if test_size is not None:
         lines.append(f"- **Test Size:** {test_size}")
-        
+
     accuracy = ml_results.get("performance", {}).get("accuracy")
     if accuracy is not None:
         lines.append(f"- **Accuracy:** {accuracy:.4f}")
-    
+
     params = ml_results.get("model_params") or {}
     if params:
         params_str = ", ".join(f"`{k}={v}`" for k, v in params.items())
@@ -361,7 +489,7 @@ def format_ml_model_markdown(lines: List[str], ml_results: Dict[str, Any], title
         lines.append("- **Parameters:** Default settings")
     lines.append("")
 
-    format_fairness_board_markdown(lines, ml_results, title)
+    format_fairness_board_markdown(lines, ml_results, title, header_level=header_level + 1)
 
 
 # ── Report Generation ──────────────────────────────────────────────────
@@ -377,7 +505,7 @@ def generate_markdown_report(pipeline) -> str:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     lines: List[str] = []
-    lines.append("# Dataset Fairness Evaluation Report")
+    lines.append("# EquiAudit Fairness Report")
     lines.append("")
     lines.append("## Metadata")
     lines.append("")
@@ -401,13 +529,13 @@ def generate_markdown_report(pipeline) -> str:
     
     stage_titles = {
         "0_loading": "Stage 0: Dataset Loading",
-        "1_objective": "Stage 1: Objective Inspection",
-        "2_quality": "Stage 2: Data Quality Analysis",
-        "3_sensitive": "Stage 3: Sensitive Attribute Detection",
+        "1_objective": "Stage 1: Objective Validation",
+        "2_quality": "Stage 2: Data Quality Inspection",
+        "3_sensitive": "Stage 3: Sensitive Attribute Identification",
         "3_5_discretization": "Stage 3.5: Sensitive Attribute Discretization",
         "4_imbalance": "Stage 4: Imbalance Analysis",
         "4_5_target_fairness": "Stage 4.5: Target Fairness Analysis",
-        "5_recommendations": "Stage 5: Recommendations",
+        "5_recommendations": "Stage 5: Recommendation Synthesis",
         "6_bias_mitigation": "Stage 6: Bias Mitigation",
     }
     
@@ -487,7 +615,7 @@ def generate_markdown_report(pipeline) -> str:
         lines.append("---")
         lines.append("")
     
-    lines.append("*Report generated by Dataset Fairness Evaluation System*")
+    lines.append("*Report generated by EquiAudit*")
     return "\n".join(lines)
 
 

@@ -1,6 +1,6 @@
 # Usage Guide
 
-This document covers installation, configuration, and all execution modes of the Fairness Evaluation System.
+This document covers installation, configuration, and all execution modes of EquiAudit.
 
 ## Prerequisites
 
@@ -107,7 +107,7 @@ mitigation_techniques:
   # available: "reweighting", "resampling", "smote", "oversampling", "undersampling"
 
 ml_evaluation:
-  model_type: "Random Forest"          # "Random Forest" | "Gradient Boosting" | "Logistic Regression" | "SVM"
+  model_type: "Random Forest"          # "Random Forest" | "Gradient Boosting" | "Logistic Regression" | "SVC"
   model_params:
     "Random Forest":
       n_estimators: 100

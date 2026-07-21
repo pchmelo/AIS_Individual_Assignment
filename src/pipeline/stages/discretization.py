@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List
 
+from models.agents.base_agent import APIError
 from pipeline.stages.base import BaseStageExecutor, safe_json_dumps
 
 
@@ -87,7 +88,33 @@ class DiscretizationStage(BaseStageExecutor):
                 prompt = self._build_auto_prompt(col_stats)
                 prompt = self._append_user_context(prompt, stage.user_context)
 
-                agent_response = stage.agent.run(prompt, max_tokens=1024)
+                try:
+                    agent_response = stage.agent.run(prompt, max_tokens=4096)
+                except (APIError, Exception) as exc:
+                    # Model failed to respond; fall back to equal-width so the
+                    # pipeline continues rather than crashing.
+                    print(
+                        f"[Stage 3.5] WARNING: Agent call failed for '{col_name}' "
+                        f"({exc}). Falling back to equal_width with {n_bins} bins."
+                    )
+                    result = discretization_tools.discretize_column_manual(
+                        dataset_name=current_dataset,
+                        column_name=col_name,
+                        method="equal_width",
+                        number_of_bins=n_bins,
+                    )
+                    result["method"] = "equal_width (fallback — agent unavailable)"
+                    agent_reasoning += f"\n### {col_name}\nAgent unavailable; applied equal-width binning with {n_bins} bins.\n"
+                    if result.get("status") == "success":
+                        discretized_info.append(result)
+                        current_dataset = result["output_dataset"]
+                    else:
+                        discretized_info.append({
+                            "column": col_name,
+                            "status": "error",
+                            "message": result.get("message", "Unknown error"),
+                        })
+                    continue
 
                 # Parse the agent's bin edges from the response
                 bin_edges = self._parse_bin_edges(agent_response, col_stats)
