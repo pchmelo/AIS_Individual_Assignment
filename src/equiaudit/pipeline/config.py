@@ -6,7 +6,7 @@ from typing import Dict, List, Type
 
 import yaml
 
-from pipeline.stages import (
+from equiaudit.pipeline.stages import (
     BaseStageExecutor,
     LoadingStage,
     ObjectiveStage,

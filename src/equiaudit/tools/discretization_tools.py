@@ -7,8 +7,7 @@ class DiscretizationTools:
     """Utility class for discretizing continuous sensitive attributes into categorical bins.
 
     This is NOT a ToolManager — it is a plain helper used directly by the
-    DiscretizationStage.  It lives in src/tools/ because the user requested it
-    here, but does not need to be registered in the tools config.
+    DiscretizationStage. It does not need to be registered in the tools config.
     """
 
     def __init__(self):

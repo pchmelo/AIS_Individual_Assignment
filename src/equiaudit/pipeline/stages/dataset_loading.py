@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any, Dict
 
-from pipeline.stages.base import BaseStageExecutor
+from equiaudit.pipeline.stages.base import BaseStageExecutor
 
 
 """

@@ -3,13 +3,13 @@ import re
 import streamlit as st
 import pandas as pd
 
-from gui.widgets.results import (
+from equiaudit.gui.widgets.results import (
     display_quality_results,
     display_sensitive_results,
     display_imbalance_results,
     display_fairness_results,
 )
-from gui.widgets.fairness import (
+from equiaudit.gui.widgets.fairness import (
     render_fairness_comparison_board,
     render_mitigated_fairness_table,
     render_mitigation_scorecard,

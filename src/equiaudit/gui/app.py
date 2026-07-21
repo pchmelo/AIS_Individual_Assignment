@@ -1,10 +1,10 @@
 import streamlit as st
 
-from gui.styles import inject_css
-from gui.state import init_session_state
-from gui.screens.main_page import main_page
-from gui.screens.new_evaluation import new_evaluation_page
-from gui.screens.view_results import view_results_page
+from equiaudit.gui.styles import inject_css
+from equiaudit.gui.state import init_session_state
+from equiaudit.gui.screens.main_page import main_page
+from equiaudit.gui.screens.new_evaluation import new_evaluation_page
+from equiaudit.gui.screens.view_results import view_results_page
 
 
 def main():

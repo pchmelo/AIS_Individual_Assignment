@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List
 import pandas as pd
-from pipeline.stages.base import BaseStageExecutor, safe_json_dumps
+from equiaudit.pipeline.stages.base import BaseStageExecutor, safe_json_dumps
 
 
 

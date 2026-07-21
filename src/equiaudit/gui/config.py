@@ -7,7 +7,7 @@ def get_config_path() -> str:
 
     Priority:
     1. FAIRNESS_CONFIG_PATH env var (set by gui.launch() when a user config is supplied)
-    2. Internal src/models/config.yml (default)
+    2. Bundled default (equiaudit/models/config.yml)
     """
     user_path = os.environ.get("FAIRNESS_CONFIG_PATH", "")
     if user_path and os.path.exists(user_path):

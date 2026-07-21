@@ -1,6 +1,6 @@
 import requests
 from typing import List, Dict, Any
-from models.clients.base_client import BaseModelClient, ModelInfo
+from equiaudit.models.clients.base_client import BaseModelClient, ModelInfo
 
 class OllamaClient(BaseModelClient):
     """

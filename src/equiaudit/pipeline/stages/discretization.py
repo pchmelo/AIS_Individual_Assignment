@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List
 
-from models.agents.base_agent import APIError
-from pipeline.stages.base import BaseStageExecutor, safe_json_dumps
+from equiaudit.models.agents.base_agent import APIError
+from equiaudit.pipeline.stages.base import BaseStageExecutor, safe_json_dumps
 
 
 """

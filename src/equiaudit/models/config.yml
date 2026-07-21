@@ -23,10 +23,10 @@
 # -----------------------------------------------------------------------------
 # Mode
 # -----------------------------------------------------------------------------
-# How to launch the application via python main.py.
-#   gui  - Streamlit web interface (requires: pip install -r requirements-gui.txt)
-#   cli  - Command-line interface
-#   quick - Quick headless evaluation with defaults
+# How to launch via examples/example_usage.py (or python src/equiaudit/main.py).
+#   gui   - Streamlit web interface (requires: pip install "equiaudit[gui]")
+#   quick - Headless evaluation with defaults from this file
+# For full CLI control use: equiaudit --data ... (see README)
 mode: gui
 
 generate_detailed_report: true # If true, generates detailed_metrics_report.md and .pdf

@@ -1,4 +1,4 @@
-from cli.evaluator import FairnessEvaluator, EvaluationResult, VerificationResult
+from equiaudit.cli.evaluator import FairnessEvaluator, EvaluationResult, VerificationResult
 
 __all__ = [
     "FairnessEvaluator",

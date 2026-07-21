@@ -30,13 +30,13 @@ def _read_mode_from_config() -> str:
 
     Search order:
     1. config.yml in the current working directory (user-facing config)
-    2. src/models/config.yml (internal default)
+    2. Bundled default config (equiaudit/models/config.yml)
     """
     try:
         import yaml
         candidates = [
             os.path.join(os.getcwd(), "config.yml"),   # e.g. examples/config.yml
-            get_config_path(),                           # src/models/config.yml
+            get_config_path(),                           # bundled default
         ]
         for config_path in candidates:
             if os.path.exists(config_path):
@@ -61,7 +61,7 @@ def run_quick_mode():
     print("FAIRNESS EVALUATION - Quick Mode")
     print("=" * 80)
     
-    from cli import FairnessEvaluator
+    from equiaudit.cli import FairnessEvaluator
     
     # Default dataset and target
     dataset_name = "adult-all.csv"
@@ -113,7 +113,7 @@ def run_quick_mode():
 def run_gui_mode():
     """Launch the Streamlit GUI."""
     try:
-        from gui import launch
+        from equiaudit.gui import launch
         launch()
         return 0
     except ImportError as e:

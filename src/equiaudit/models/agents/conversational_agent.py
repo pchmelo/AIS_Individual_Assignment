@@ -1,5 +1,5 @@
-from models.agents.base_agent import BaseAgent
-from models.clients.base_client import BaseModelClient
+from equiaudit.models.agents.base_agent import BaseAgent
+from equiaudit.models.clients.base_client import BaseModelClient
 
 class ConversationalAgent(BaseAgent):    
     def __init__(self, model_client: BaseModelClient = None, model_name: str = None):

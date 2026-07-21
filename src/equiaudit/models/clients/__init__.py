@@ -1,8 +1,8 @@
-from models.clients.base_client import BaseModelClient
-from models.clients.openrouter_client import OpenRouterClient
-from models.clients.gemini_client import GeminiClient
-from models.clients.ollama_client import OllamaClient
-from models.clients.client_factory import ClientFactory
+from equiaudit.models.clients.base_client import BaseModelClient
+from equiaudit.models.clients.openrouter_client import OpenRouterClient
+from equiaudit.models.clients.gemini_client import GeminiClient
+from equiaudit.models.clients.ollama_client import OllamaClient
+from equiaudit.models.clients.client_factory import ClientFactory
 
 __all__ = [
     'BaseModelClient',

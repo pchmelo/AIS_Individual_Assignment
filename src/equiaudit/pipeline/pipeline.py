@@ -10,20 +10,20 @@ from itertools import combinations as iter_combinations
 # Root directory of the project (parent of src/)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models.agents.function_caller_agent import FunctionCallerAgent
-from models.agents.data_analyst_agent import DataAnalystAgent
-from models.agents.conversational_agent import ConversationalAgent
-from models.agents.humanizer_agent import HumanizerAgent
-from models.agents.summary_agent import SummaryAgent
-from models.agent_manager import AgentManager
-from tools.fairness_tools import FairnessTools
-from tools.bias_mitigation_tools import BiasMitigationTools
-from tools.discretization_tools import DiscretizationTools
+from equiaudit.models.agents.function_caller_agent import FunctionCallerAgent
+from equiaudit.models.agents.data_analyst_agent import DataAnalystAgent
+from equiaudit.models.agents.conversational_agent import ConversationalAgent
+from equiaudit.models.agents.humanizer_agent import HumanizerAgent
+from equiaudit.models.agents.summary_agent import SummaryAgent
+from equiaudit.models.agent_manager import AgentManager
+from equiaudit.tools.fairness_tools import FairnessTools
+from equiaudit.tools.bias_mitigation_tools import BiasMitigationTools
+from equiaudit.tools.discretization_tools import DiscretizationTools
 
-from pipeline.stage import Stage, NavigationAction
-from pipeline.config import EVALUATION_STAGES, load_pipeline_config
-from pipeline.stages.base import safe_json_dumps
-from pipeline.utils import (
+from equiaudit.pipeline.stage import Stage, NavigationAction
+from equiaudit.pipeline.config import EVALUATION_STAGES, load_pipeline_config
+from equiaudit.pipeline.stages.base import safe_json_dumps
+from equiaudit.pipeline.utils import (
     format_mitigation_markdown, 
     format_pair_selection_markdown,
     generate_markdown_report,
@@ -31,9 +31,9 @@ from pipeline.utils import (
     save_fairness_comparison_files,
     generate_detailed_markdown_report
 )
-from pipeline.stages.pair_selection import build_pair_selection_prompt, parse_pair_selection_response
+from equiaudit.pipeline.stages.pair_selection import build_pair_selection_prompt, parse_pair_selection_response
 
-from gui.pdf_generator import generate_pdf_bytes
+from equiaudit.reporting.pdf_generator import generate_pdf_bytes
 
 
 class DatasetEvaluationPipeline:

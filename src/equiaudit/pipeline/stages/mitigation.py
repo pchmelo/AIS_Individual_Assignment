@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict
 
-from pipeline.stages.base import BaseStageExecutor, safe_json_dumps
+from equiaudit.pipeline.stages.base import BaseStageExecutor, safe_json_dumps
 
 
 """

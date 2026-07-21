@@ -6,10 +6,10 @@ import traceback
 import pandas as pd
 import streamlit as st
 
-from gui.utils import BASE_DIR, get_available_reports, parse_report_file
-from gui.widgets.fairness import render_fairness_board, render_fairness_comparison_board
-from gui.widgets.stage_display import _clean_agent_analysis
-from gui.pdf_generator import generate_pdf_bytes
+from equiaudit.gui.utils import BASE_DIR, get_available_reports, parse_report_file
+from equiaudit.gui.widgets.fairness import render_fairness_board, render_fairness_comparison_board
+from equiaudit.gui.widgets.stage_display import _clean_agent_analysis
+from equiaudit.reporting.pdf_generator import generate_pdf_bytes
 
 
 def view_results_page():

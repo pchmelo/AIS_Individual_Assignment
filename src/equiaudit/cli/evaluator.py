@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sys
 import yaml
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -9,17 +8,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import shutil
 import traceback
-from models.agents.base_agent import APIError
+from equiaudit.models.agents.base_agent import APIError
 
 import pandas as pd
-from pipeline.pipeline import DatasetEvaluationPipeline
-from pipeline.utils import TECHNIQUE_DISPLAY
+from equiaudit.pipeline.pipeline import DatasetEvaluationPipeline
+from equiaudit.pipeline.utils import TECHNIQUE_DISPLAY
 
-
-# Add src to path for imports when running as standalone
+# Root of the equiaudit package (parent of cli/)
 _SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _SRC_DIR not in sys.path:
-    sys.path.insert(0, _SRC_DIR)
 
 
 @dataclass
@@ -267,7 +263,7 @@ class FairnessEvaluator:
         else:
             data_path = Path(data)
             if not data_path.exists():
-                # Try looking in src/data/
+                # Try looking in the bundled data directory
                 data_path = Path(_SRC_DIR) / "data" / data_path.name
             
             if not data_path.exists():

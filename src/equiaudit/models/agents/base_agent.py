@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict
 import time
 import re
-from models.clients.base_client import BaseModelClient
+from equiaudit.models.clients.base_client import BaseModelClient
 
 
 # Patterns that indicate a model is outputting internal reasoning/monologue

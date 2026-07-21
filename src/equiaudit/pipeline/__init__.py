@@ -1,5 +1,5 @@
-from pipeline.stage import Stage, StageStatus, NavigationAction
-from pipeline.pipeline import DatasetEvaluationPipeline
+from equiaudit.pipeline.stage import Stage, StageStatus, NavigationAction
+from equiaudit.pipeline.pipeline import DatasetEvaluationPipeline
 
 __all__ = [
     "Stage",

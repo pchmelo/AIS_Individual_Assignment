@@ -1,13 +1,13 @@
-from pipeline.stages.base import BaseStageExecutor, safe_json_dumps
-from pipeline.stages.dataset_loading import LoadingStage
-from pipeline.stages.objective import ObjectiveStage
-from pipeline.stages.quality import QualityStage
-from pipeline.stages.sensitive import SensitiveDetectionStage
-from pipeline.stages.discretization import DiscretizationStage
-from pipeline.stages.imbalance import ImbalanceStage
-from pipeline.stages.fairness import TargetFairnessStage
-from pipeline.stages.recommendations import RecommendationsStage
-from pipeline.stages.mitigation import MitigationStage
+from equiaudit.pipeline.stages.base import BaseStageExecutor, safe_json_dumps
+from equiaudit.pipeline.stages.dataset_loading import LoadingStage
+from equiaudit.pipeline.stages.objective import ObjectiveStage
+from equiaudit.pipeline.stages.quality import QualityStage
+from equiaudit.pipeline.stages.sensitive import SensitiveDetectionStage
+from equiaudit.pipeline.stages.discretization import DiscretizationStage
+from equiaudit.pipeline.stages.imbalance import ImbalanceStage
+from equiaudit.pipeline.stages.fairness import TargetFairnessStage
+from equiaudit.pipeline.stages.recommendations import RecommendationsStage
+from equiaudit.pipeline.stages.mitigation import MitigationStage
 
 __all__ = [
     "BaseStageExecutor",

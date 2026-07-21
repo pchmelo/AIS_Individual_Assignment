@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 import json
-from models.agents.base_agent import BaseAgent
-from models.clients.base_client import BaseModelClient
+from equiaudit.models.agents.base_agent import BaseAgent
+from equiaudit.models.clients.base_client import BaseModelClient
 
 class SummaryAgent(BaseAgent):
     """

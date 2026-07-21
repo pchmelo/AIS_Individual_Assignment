@@ -1,16 +1,16 @@
 """
 GUI sub-package for the Fairness Evaluation System.
 
-Requires additional dependencies (Streamlit). Install with:
+Requires Streamlit. Install with:
 
-    pip install -r requirements-gui.txt
+    pip install "equiaudit[gui]"
 
 Usage (from Python code):
 
-    from gui import launch
+    from equiaudit.gui import launch
     launch()
 
-Or set ``mode: gui`` in your config.yml and run ``python main.py``.
+Or set ``mode: gui`` in your config.yml and run ``python examples/example_usage.py``.
 """
 
 
@@ -24,7 +24,7 @@ def _check_gui_deps() -> None:
             "GUI dependencies are not installed.\n"
             "\n"
             "Install them with:\n"
-            "    pip install -r requirements-gui.txt\n"
+            '    pip install "equiaudit[gui]"\n'
             "\n"
             "Or install Streamlit directly:\n"
             "    pip install streamlit\n"
@@ -47,7 +47,7 @@ def launch(config_path: str = None, env_file: str = None, dataset_path: str = No
 
     Raises:
         ImportError: If Streamlit is not installed. Install with
-            ``pip install -r requirements-gui.txt``.
+            ``pip install "equiaudit[gui]"``.
     """
     _check_gui_deps()
 
@@ -83,7 +83,7 @@ def launch(config_path: str = None, env_file: str = None, dataset_path: str = No
     print("=" * 80)
 
     gui_app_path = os.path.join(os.path.dirname(__file__), "app.py")
-    src_dir = os.path.dirname(os.path.dirname(__file__))  # .../src/
+    src_dir = os.path.dirname(os.path.dirname(__file__))  # parent of equiaudit/ (site-packages when installed)
 
     # Build env for subprocess — inherits current env (including any freshly
     # loaded .env vars) then adds PYTHONPATH and optionally FAIRNESS_CONFIG_PATH.

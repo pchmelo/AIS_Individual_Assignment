@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
-from tools.tool import Tool
-from tools.tool_manager import ToolManager
+from equiaudit.tools.tool import Tool
+from equiaudit.tools.tool_manager import ToolManager
 import os
 import warnings
 from imblearn.over_sampling import SMOTE, RandomOverSampler

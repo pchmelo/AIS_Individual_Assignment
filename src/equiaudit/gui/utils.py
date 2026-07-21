@@ -18,7 +18,7 @@ def get_available_datasets() -> list:
     env_dataset = os.environ.get("FAIRNESS_DATASET_PATH", "")
     if env_dataset and os.path.exists(env_dataset):
         return [os.path.basename(env_dataset)]
-    # Development fallback: datasets bundled in src/data/
+    # Datasets bundled with the package
     data_dir = os.path.join(SRC_DIR, "data")
     if os.path.exists(data_dir):
         return [f for f in os.listdir(data_dir) if f.endswith(".csv")]

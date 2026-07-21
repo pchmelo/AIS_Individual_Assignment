@@ -20,12 +20,12 @@ Pipeline Stage (BaseStageExecutor)
 
 | Layer | Base class | File |
 |-------|-----------|------|
-| LLM Backend | `BaseModelClient` | `src/models/clients/base_client.py` |
-| Agent | `BaseAgent` | `src/models/agents/base_agent.py` |
-| Tool | `ToolManager` + `Tool` | `src/tools/tool_manager.py`, `src/tools/tool.py` |
-| Pipeline Stage | `BaseStageExecutor` | `src/pipeline/stages/base.py` |
+| LLM Backend | `BaseModelClient` | `src/equiaudit/models/clients/base_client.py` |
+| Agent | `BaseAgent` | `src/equiaudit/models/agents/base_agent.py` |
+| Tool | `ToolManager` + `Tool` | `src/equiaudit/tools/tool_manager.py`, `src/equiaudit/tools/tool.py` |
+| Pipeline Stage | `BaseStageExecutor` | `src/equiaudit/pipeline/stages/base.py` |
 
-Configuration is declarative: `src/models/config.yml` wires models, agents, and tools; `src/pipeline/pipeline_config.yml` defines stage order and executor class names.
+Configuration is declarative: `src/equiaudit/models/config.yml` wires models, agents, and tools; `src/equiaudit/pipeline/pipeline_config.yml` defines stage order and executor class names.
 
 
 ## 1. Adding a New Tool
@@ -37,9 +37,9 @@ A `Tool` is a named, callable function with a JSON-Schema parameter spec, expose
 ### Step 1: Implement the ToolManager subclass
 
 ```python
-# src/tools/my_tools.py
-from tools.tool import Tool
-from tools.tool_manager import ToolManager
+# src/equiaudit/tools/my_tools.py
+from equiaudit.tools.tool import Tool
+from equiaudit.tools.tool_manager import ToolManager
 
 
 class MyTools(ToolManager):
@@ -107,10 +107,10 @@ class MyTools(ToolManager):
 
 ### Step 2: Register in AgentManager
 
-`AgentManager._get_tool_manager()` in `src/models/agent_manager.py` resolves tool names to instances. Add a branch for your new class:
+`AgentManager._get_tool_manager()` in `src/equiaudit/models/agent_manager.py` resolves tool names to instances. Add a branch for your new class:
 
 ```python
-# src/models/agent_manager.py  (inside AgentManager._get_tool_manager)
+# src/equiaudit/models/agent_manager.py  (inside AgentManager._get_tool_manager)
 def _get_tool_manager(self, tool_name: str):
     if tool_name not in self._tools:
         if tool_name.lower() in ["fairness", "fairness_tools"]:
@@ -118,7 +118,7 @@ def _get_tool_manager(self, tool_name: str):
         elif tool_name.lower() in ["bias_mitigation", "bias_mitigation_tools"]:
             self._tools[tool_name] = BiasMitigationTools()
         elif tool_name.lower() in ["my_tools", "mytools"]:          # ← add this
-            from tools.my_tools import MyTools
+            from equiaudit.tools.my_tools import MyTools
             self._tools[tool_name] = MyTools()
         else:
             raise ValueError(f"Unknown tool manager: {tool_name}")
@@ -154,7 +154,7 @@ The `class:` value is informational only (not auto-loaded); actual loading happe
 ### Abstract interface
 
 ```python
-# src/models/agents/base_agent.py
+# src/equiaudit/models/agents/base_agent.py
 class BaseAgent(ABC):
     def __init__(self, model_client: BaseModelClient, model_name: str = None): ...
 
@@ -178,11 +178,11 @@ class BaseAgent(ABC):
 ### Step 1: Implement the agent
 
 ```python
-# src/models/agents/my_agent.py
+# src/equiaudit/models/agents/my_agent.py
 from typing import List, Dict
-from models.agents.base_agent import BaseAgent
-from models.clients.base_client import BaseModelClient
-from tools.tool_manager import ToolManager
+from equiaudit.models.agents.base_agent import BaseAgent
+from equiaudit.models.clients.base_client import BaseModelClient
+from equiaudit.tools.tool_manager import ToolManager
 
 
 class MyAgent(BaseAgent):
@@ -217,10 +217,10 @@ class MyAgent(BaseAgent):
 
 ### Step 2: Register the type string in AgentManager
 
-`_get_agent_class()` in `src/models/agent_manager.py` maps type strings to classes via substring matching:
+`_get_agent_class()` in `src/equiaudit/models/agent_manager.py` maps type strings to classes via substring matching:
 
 ```python
-# src/models/agent_manager.py  (inside AgentManager._get_agent_class)
+# src/equiaudit/models/agent_manager.py  (inside AgentManager._get_agent_class)
 def _get_agent_class(self, agent_type: str):
     type_lower = agent_type.lower()
 
@@ -231,7 +231,7 @@ def _get_agent_class(self, agent_type: str):
     elif "conversation" in type_lower or "assistant" in type_lower:
         return ConversationalAgent
     elif "myagent" in type_lower or "my_agent" in type_lower:    # ← add this
-        from models.agents.my_agent import MyAgent
+        from equiaudit.models.agents.my_agent import MyAgent
         return MyAgent
     else:
         raise ValueError(f"Unknown agent type: {agent_type}")
@@ -257,7 +257,7 @@ If your agent constructor accepts kwargs beyond `model_client` and `tool_manager
 ### Abstract interface
 
 ```python
-# src/models/clients/base_client.py
+# src/equiaudit/models/clients/base_client.py
 @dataclass
 class ModelInfo:
     name: str
@@ -290,10 +290,10 @@ class BaseModelClient(ABC):
 ### Step 1: Implement the client
 
 ```python
-# src/models/clients/my_provider_client.py
+# src/equiaudit/models/clients/my_provider_client.py
 import requests
 from typing import List, Dict
-from models.clients.base_client import BaseModelClient, ModelInfo
+from equiaudit.models.clients.base_client import BaseModelClient, ModelInfo
 
 
 class MyProviderClient(BaseModelClient):
@@ -359,11 +359,11 @@ class MyProviderClient(BaseModelClient):
 
 ### Step 2: Register in ClientFactory
 
-`ClientFactory._providers` in `src/models/clients/client_factory.py` is a class-level dict populated lazily in `_ensure_providers_loaded()`:
+`ClientFactory._providers` in `src/equiaudit/models/clients/client_factory.py` is a class-level dict populated lazily in `_ensure_providers_loaded()`:
 
 ```python
-# src/models/clients/client_factory.py
-from models.clients.my_provider_client import MyProviderClient   # ← import
+# src/equiaudit/models/clients/client_factory.py
+from equiaudit.models.clients.my_provider_client import MyProviderClient   # ← import
 
 class ClientFactory:
     @classmethod
@@ -401,7 +401,7 @@ Any extra keys in the model config block (e.g. `base_url`) are passed as `**kwar
 ### Abstract interface
 
 ```python
-# src/pipeline/stages/base.py
+# src/equiaudit/pipeline/stages/base.py
 class BaseStageExecutor(ABC):
     @abstractmethod
     def __call__(self, stage, ctx: Dict[str, Any]) -> Dict[str, Any]:
@@ -435,11 +435,11 @@ The dict your executor returns is stored verbatim in `stage_data.json` under the
 ### Step 1: Implement the executor
 
 ```python
-# src/pipeline/stages/my_stage.py
+# src/equiaudit/pipeline/stages/my_stage.py
 from __future__ import annotations
 
 from typing import Any, Dict
-from pipeline.stages.base import BaseStageExecutor
+from equiaudit.pipeline.stages.base import BaseStageExecutor
 
 
 class MyCustomStage(BaseStageExecutor):
@@ -487,11 +487,11 @@ For stages that need to write files (e.g. images), write to `ctx["report_dir"]` 
 
 ### Step 2: Register in the executor registry
 
-`_EXECUTOR_REGISTRY` in `src/pipeline/config.py` maps YAML class name strings to executor classes:
+`_EXECUTOR_REGISTRY` in `src/equiaudit/pipeline/config.py` maps YAML class name strings to executor classes:
 
 ```python
-# src/pipeline/config.py
-from pipeline.stages.my_stage import MyCustomStage    # ← import
+# src/equiaudit/pipeline/config.py
+from equiaudit.pipeline.stages.my_stage import MyCustomStage    # ← import
 
 _EXECUTOR_REGISTRY: Dict[str, Type[BaseStageExecutor]] = {
     "LoadingStage": LoadingStage,
@@ -507,16 +507,16 @@ _EXECUTOR_REGISTRY: Dict[str, Type[BaseStageExecutor]] = {
 }
 ```
 
-Also add the import at the top of `src/pipeline/stages/__init__.py` if you want it re-exported:
+Also add the import at the top of `src/equiaudit/pipeline/stages/__init__.py` if you want it re-exported:
 
 ```python
-# src/pipeline/stages/__init__.py
-from pipeline.stages.my_stage import MyCustomStage
+# src/equiaudit/pipeline/stages/__init__.py
+from equiaudit.pipeline.stages.my_stage import MyCustomStage
 ```
 
 ### Step 3: Add to pipeline_config.yml
 
-`src/pipeline/pipeline_config.yml` defines stage order, executor binding, and optional behaviour flags:
+`src/equiaudit/pipeline/pipeline_config.yml` defines stage order, executor binding, and optional behaviour flags:
 
 ```yaml
 stages:
@@ -538,12 +538,12 @@ stages:
     requires_confirmation: true      # GUI pauses for user confirmation before running
 ```
 
-The `agent:` value must be an **attribute name on `DatasetEvaluationPipeline`** (`src/pipeline/pipeline.py`). If you are adding a new agent to an existing attribute slot, no pipeline changes are needed. If you need a new dedicated agent attribute, add it to `DatasetEvaluationPipeline.__init__` and wire it via `AgentManager.get_agent()`.
+The `agent:` value must be an **attribute name on `DatasetEvaluationPipeline`** (`src/equiaudit/pipeline/pipeline.py`). If you are adding a new agent to an existing attribute slot, no pipeline changes are needed. If you need a new dedicated agent attribute, add it to `DatasetEvaluationPipeline.__init__` and wire it via `AgentManager.get_agent()`.
 
 ### Step 4: Expose the agent attribute on the pipeline (if needed)
 
 ```python
-# src/pipeline/pipeline.py  (inside DatasetEvaluationPipeline.__init__)
+# src/equiaudit/pipeline/pipeline.py  (inside DatasetEvaluationPipeline.__init__)
 self.my_custom_agent = self.agent_manager.get_agent("my_custom_agent")
 ```
 
@@ -562,7 +562,7 @@ agents:
 
 | What you're adding | Files to modify |
 |--------------------|----------------|
-| New Tool | `src/tools/my_tools.py` (new file) · `src/models/agent_manager.py` (`_get_tool_manager`) · `config.yml` (`tools:` + `agents.*.tools`) |
-| New Agent type | `src/models/agents/my_agent.py` (new file) · `src/models/agent_manager.py` (`_get_agent_class`) · `config.yml` (`agents.*.type`) |
-| New LLM Backend | `src/models/clients/my_provider_client.py` (new file) · `src/models/clients/client_factory.py` (`_providers` dict) · `config.yml` (`models:`) |
-| New Pipeline Stage | `src/pipeline/stages/my_stage.py` (new file) · `src/pipeline/stages/__init__.py` · `src/pipeline/config.py` (`_EXECUTOR_REGISTRY`) · `src/pipeline/pipeline_config.yml` · `src/pipeline/pipeline.py` (if new agent attribute needed) |
+| New Tool | `src/equiaudit/tools/my_tools.py` (new file) · `src/equiaudit/models/agent_manager.py` (`_get_tool_manager`) · `config.yml` (`tools:` + `agents.*.tools`) |
+| New Agent type | `src/equiaudit/models/agents/my_agent.py` (new file) · `src/equiaudit/models/agent_manager.py` (`_get_agent_class`) · `config.yml` (`agents.*.type`) |
+| New LLM Backend | `src/equiaudit/models/clients/my_provider_client.py` (new file) · `src/equiaudit/models/clients/client_factory.py` (`_providers` dict) · `config.yml` (`models:`) |
+| New Pipeline Stage | `src/equiaudit/pipeline/stages/my_stage.py` (new file) · `src/equiaudit/pipeline/stages/__init__.py` · `src/equiaudit/pipeline/config.py` (`_EXECUTOR_REGISTRY`) · `src/equiaudit/pipeline/pipeline_config.yml` · `src/equiaudit/pipeline/pipeline.py` (if new agent attribute needed) |

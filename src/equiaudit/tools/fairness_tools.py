@@ -2,8 +2,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from tools.tool import Tool
-from tools.tool_manager import ToolManager
+from equiaudit.tools.tool import Tool
+from equiaudit.tools.tool_manager import ToolManager
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression

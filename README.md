@@ -36,10 +36,16 @@ A video demonstration of the full GUI workflow is available on YouTube:
 
 ## Installation
 
-1. Clone the repository and navigate to the project directory.
-
-2. Install dependencies:
+**From PyPI (recommended):**
 ```bash
+pip install equiaudit            # core pipeline
+pip install "equiaudit[gui]"     # optional: Streamlit GUI
+```
+
+**From source:**
+```bash
+git clone https://github.com/pchmelo/EquiAudit.git
+cd EquiAudit
 pip install -r requirements.txt          # core pipeline
 pip install -r requirements-gui.txt      # optional: Streamlit GUI
 ```
@@ -69,9 +75,7 @@ The script dispatches to the GUI or the headless evaluator based on the config:
 
 ```python
 # examples/example_usage.py
-import os, sys, yaml
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
+import os, yaml
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -82,10 +86,10 @@ with open(CONFIG_PATH, encoding="utf-8") as f:
     _mode = (yaml.safe_load(f) or {}).get("mode", "quick")
 
 if _mode == "gui":
-    from gui import launch
+    from equiaudit.gui import launch
     launch(config_path=CONFIG_PATH, dataset_path=DATASET_PATH)
 else:
-    from cli import FairnessEvaluator
+    from equiaudit.cli import FairnessEvaluator
     evaluator = FairnessEvaluator(config_path=CONFIG_PATH)
     result = evaluator.evaluate(
         data=DATASET_PATH,
@@ -103,7 +107,7 @@ else:
 See [USAGE.md — Execution Modes](docs/USAGE.md#execution-modes) for the full CLI flag reference and Python API usage.
 
 ## Datasets
-Example datasets are provided in `src/data/` for testing. The default example is `adult-all.csv` (UCI Adult Census Income, target column `Income`).
+Example datasets are provided in `src/equiaudit/data/` for testing. The default example is `adult-all.csv` (UCI Adult Census Income, target column `Income`).
 
 ## Reports
 Generated reports are saved under `reports/<dataset>_<timestamp>/` and include a Markdown narrative, a PDF, per-group fairness metrics, and raw JSON stage data. A sample report is available in `reports/`.

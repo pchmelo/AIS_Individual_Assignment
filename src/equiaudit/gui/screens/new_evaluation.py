@@ -5,10 +5,10 @@ from itertools import combinations
 
 import streamlit as st
 
-from pipeline import DatasetEvaluationPipeline
-from pipeline.stage import NavigationAction, StageStatus
+from equiaudit.pipeline import DatasetEvaluationPipeline
+from equiaudit.pipeline.stage import NavigationAction, StageStatus
 
-from gui.config import (
+from equiaudit.gui.config import (
     get_config_path,
     get_available_models,
     get_default_model_name,
@@ -18,14 +18,14 @@ from gui.config import (
     get_default_dataset,
     validate_api_keys,
 )
-from gui.utils import (
+from equiaudit.gui.utils import (
     BASE_DIR,
     get_available_datasets,
     upload_dataset,
     get_dataset_columns,
 )
-from gui.widgets.stage_display import display_stage_results
-from gui.pdf_generator import generate_pdf_bytes
+from equiaudit.gui.widgets.stage_display import display_stage_results
+from equiaudit.reporting.pdf_generator import generate_pdf_bytes
 import requests
 
 def _get_ollama_models() -> list[str]:

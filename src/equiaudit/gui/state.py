@@ -1,6 +1,6 @@
 import streamlit as st
 
-from gui.config import get_default_model_name
+from equiaudit.gui.config import get_default_model_name
 
 
 def init_session_state():

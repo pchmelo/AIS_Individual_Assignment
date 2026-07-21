@@ -4,13 +4,17 @@ This document covers installation, configuration, and all execution modes of Equ
 
 ## Prerequisites
 
-```
-Python >= 3.10
-pip install -r requirements.txt          # core pipeline
-pip install -r requirements-gui.txt      # optional: Streamlit GUI
+```bash
+# From PyPI (recommended)
+pip install equiaudit              # core pipeline
+pip install "equiaudit[gui]"       # optional: Streamlit GUI
+
+# From source
+pip install -r requirements.txt
+pip install -r requirements-gui.txt    # optional: Streamlit GUI
 ```
 
-Place your dataset CSV in `src/data/` or pass an absolute path at runtime. The bundled example dataset is `src/data/adult-all.csv` (UCI Adult Census, target column `Income`).
+Pass an absolute path to your dataset at runtime, or use one of the bundled example datasets (`adult-all.csv`, `GermanCredit.csv`, `bank-additional.csv`). The bundled example is the UCI Adult Census dataset, target column `Income`.
 
 
 ## Configuration File
@@ -133,28 +137,32 @@ Ollama requires a running local server (`ollama serve`) and no API key.
 Launches an interactive browser-based interface for step-by-step evaluation with per-stage confirmation dialogs.
 
 ```bash
-# Via main.py flag
-python src/main.py --gui
+# Via example script (set mode: gui in examples/config.yml)
+python examples/example_usage.py
 
-# Via config (mode: gui)
-python src/main.py
+# From source: via main.py flag
+python src/equiaudit/main.py --gui
 
-# Directly via the GUI module
-python -m streamlit run src/gui/app.py
+# Directly via the GUI module (from source)
+python -m streamlit run src/equiaudit/gui/app.py
 ```
 
-Requires `requirements-gui.txt`. Opens on `http://localhost:8501`.
+Requires `pip install "equiaudit[gui]"` (or `requirements-gui.txt` from source). Opens on `http://localhost:8501`.
 
 
 ### 2. Quick Mode (Headless, config-driven)
 
-Runs a non-interactive evaluation of `adult-all.csv` / `Income` using settings from the active config. Intended for local smoke-testing without writing Python.
+Runs a non-interactive evaluation using settings from the active config. Intended for local smoke-testing without writing Python.
 
 ```bash
-python src/main.py --quick
+# Via example script (set mode: quick in examples/config.yml)
+python examples/example_usage.py
+
+# From source: via main.py flag
+python src/equiaudit/main.py --quick
 ```
 
-The dataset, target column, sensitive attributes, mitigation techniques, and all evaluation settings are read from `config.yml` (searched first in `$CWD`, then `src/models/config.yml`).
+The dataset, target column, sensitive attributes, mitigation techniques, and all evaluation settings are read from `config.yml` (searched first in `$CWD`, then the bundled default).
 
 
 ### 3. CLI Mode (Headless, argument-driven)
@@ -163,45 +171,47 @@ Full headless evaluation with per-run argument overrides.
 
 ```bash
 # Minimal: detect target and sensitive attributes automatically
-python -m cli --data adult-all.csv
+equiaudit --data adult-all.csv
 
 # Explicit target
-python -m cli --data adult-all.csv --target Income
+equiaudit --data adult-all.csv --target Income
 
 # Override model and specify sensitive columns
-python -m cli --data adult-all.csv \
-              --target Income \
-              --model gemini-flash \
-              --sensitive "Sex,Race,Age"
+equiaudit --data adult-all.csv \
+          --target Income \
+          --model gemini-flash \
+          --sensitive "Sex,Race,Age"
 
 # Point to a custom config and output directory
-python -m cli --config examples/config.yml \
-              --data adult-all.csv \
-              --output ./reports \
-              --target Income
+equiaudit --config examples/config.yml \
+          --data adult-all.csv \
+          --output ./reports \
+          --target Income
 
 # Load API key from .env file
-python -m cli --data adult-all.csv --env-file .env
+equiaudit --data adult-all.csv --env-file .env
 
 # Verify config without running evaluation
-python -m cli --verify
+equiaudit --verify
 
 # Skip PDF generation
-python -m cli --data adult-all.csv --no-pdf
+equiaudit --data adult-all.csv --no-pdf
 
 # Suppress progress output
-python -m cli --data adult-all.csv --quiet
+equiaudit --data adult-all.csv --quiet
 ```
+
+> When running from source without installing, replace `equiaudit` with `python -m equiaudit.cli`.
 
 #### Full CLI Reference
 
 | Flag | Short | Type | Default | Description |
 |------|-------|------|---------|-------------|
-| `--data` | `-d` | str | — | Path to CSV, or filename relative to `src/data/` |
+| `--data` | `-d` | str | — | Path to CSV dataset file |
 | `--target` | `-t` | str | config / auto | Target column for classification |
 | `--objective` | `-o` | str | auto-generated | Custom evaluation prompt |
 | `--sensitive` | `-s` | str | config / auto | Comma-separated sensitive column names |
-| `--config` | `-c` | str | `src/models/config.yml` | YAML config file path |
+| `--config` | `-c` | str | bundled default | YAML config file path |
 | `--model` | `-m` | str | config default | Model name key (must exist in config `models:`) |
 | `--env-file` | `-e` | str | — | Path to `.env` for API key loading |
 | `--output` | `-O` | str | `reports/` | Report output directory |
@@ -214,13 +224,10 @@ python -m cli --data adult-all.csv --quiet
 
 ### 4. Python API
 
-`FairnessEvaluator` (in `src/cli/evaluator.py`) is the programmatic entry point.
+`FairnessEvaluator` (in `src/equiaudit/cli/evaluator.py`) is the programmatic entry point.
 
 ```python
-import sys
-sys.path.insert(0, "src")          # only needed when running from project root
-
-from cli import FairnessEvaluator
+from equiaudit.cli import FairnessEvaluator
 
 evaluator = FairnessEvaluator(
     config_path="examples/config.yml",  # path to your config
@@ -238,7 +245,7 @@ if not check.success:
 
 # ── Basic evaluation ──────────────────────────────────────────────────────────
 result = evaluator.evaluate(
-    data="adult-all.csv",              # path or filename in src/data/
+    data="adult-all.csv",              # absolute path, or filename of a bundled dataset
     target="Income",
 )
 print(result.report_dir)              # e.g. reports/adult-all.csv_20260601_113129/
@@ -281,13 +288,13 @@ import pandas as pd
 df = pd.read_csv("my_data.csv")
 
 result = evaluator.evaluate(
-    data=df,                           # DataFrame written to a temp CSV in src/data/
+    data=df,                           # DataFrame written to a temp CSV before the pipeline runs
     target="label",
     sensitive_columns=["gender"],
 )
 ```
 
-The DataFrame is saved as `temp_dataset_<timestamp>.csv` in `src/data/` before the pipeline runs.
+The DataFrame is saved as a temporary CSV before the pipeline runs.
 
 
 ## Output Artifacts
@@ -319,7 +326,7 @@ reports/
 ## Worked Example: German Credit Dataset
 
 ```python
-from cli import FairnessEvaluator
+from equiaudit.cli import FairnessEvaluator
 
 evaluator = FairnessEvaluator(config_path="examples/config.yml")
 
@@ -344,7 +351,7 @@ if result.success:
 Equivalent CLI invocation:
 
 ```bash
-python -m cli \
+equiaudit \
   --data GermanCredit.csv \
   --target Risk \
   --sensitive "Sex,Age" \

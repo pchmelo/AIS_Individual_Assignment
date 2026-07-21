@@ -5,11 +5,6 @@ import os
 import sys
 from pathlib import Path
 
-# Ensure src is in path
-_SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _SRC_DIR not in sys.path:
-    sys.path.insert(0, _SRC_DIR)
-
 
 def main(args: argparse.Namespace = None) -> int:
     """Main entry point for CLI."""
@@ -22,7 +17,7 @@ def main(args: argparse.Namespace = None) -> int:
         load_env_file(args.env_file)
     
     # Import after env loading to ensure API keys are available
-    from cli.evaluator import FairnessEvaluator
+    from equiaudit.cli.evaluator import FairnessEvaluator
     
     # Create evaluator
     evaluator = FairnessEvaluator(
@@ -87,16 +82,16 @@ def parse_args() -> argparse.Namespace:
         epilog="""
 Examples:
   # Basic evaluation
-  python -m cli --data adult-all.csv --target Income
+  equiaudit --data adult-all.csv --target Income
 
   # Verify configuration
-  python -m cli --verify
+  equiaudit --verify
 
   # Custom config and output
-  python -m cli --config my_config.yml --data data.csv --output ./reports
+  equiaudit --config my_config.yml --data data.csv --output ./reports
 
   # Specify model and sensitive columns
-  python -m cli --data data.csv --model gemini-flash --sensitive "age,sex,race"
+  equiaudit --data data.csv --model gemini-flash --sensitive "age,sex,race"
 
 Environment Variables:
   OPENROUTER_API_KEY  API key for OpenRouter models
@@ -108,7 +103,7 @@ Environment Variables:
     parser.add_argument(
         "--data", "-d",
         type=str,
-        help="Path to CSV dataset file (or filename if in src/data/)",
+        help="Path to CSV dataset file",
     )
     
     parser.add_argument(
@@ -137,7 +132,7 @@ Environment Variables:
         "--config", "-c",
         type=str,
         default=None,
-        help="Path to YAML configuration file (default: src/models/config.yml)",
+        help="Path to YAML configuration file (uses bundled default if omitted)",
     )
     
     parser.add_argument(

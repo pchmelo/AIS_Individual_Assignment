@@ -497,7 +497,7 @@ def format_ml_model_markdown(lines: List[str], ml_results: Dict[str, Any], title
 import os
 import hashlib
 from datetime import datetime
-from pipeline.stages.base import safe_json_dumps
+from equiaudit.pipeline.stages.base import safe_json_dumps
 
 def generate_markdown_report(pipeline) -> str:
     """Generate pure markdown report (human-readable, easy PDF conversion)."""

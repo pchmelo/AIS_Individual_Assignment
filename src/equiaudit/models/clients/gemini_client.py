@@ -2,7 +2,7 @@
 import os
 from typing import List, Dict
 from dotenv import load_dotenv
-from models.clients.base_client import BaseModelClient, ModelInfo
+from equiaudit.models.clients.base_client import BaseModelClient, ModelInfo
 
 try:
     from google import genai

@@ -1,15 +1,15 @@
 import os
 import yaml
 from typing import Dict, Any, List, Optional
-from models.clients.base_client import BaseModelClient
-from models.clients.client_factory import ClientFactory
+from equiaudit.models.clients.base_client import BaseModelClient
+from equiaudit.models.clients.client_factory import ClientFactory
 
-from tools.fairness_tools import FairnessTools
-from tools.bias_mitigation_tools import BiasMitigationTools
+from equiaudit.tools.fairness_tools import FairnessTools
+from equiaudit.tools.bias_mitigation_tools import BiasMitigationTools
 
-from models.agents.conversational_agent import ConversationalAgent
-from models.agents.data_analyst_agent import DataAnalystAgent
-from models.agents.function_caller_agent import FunctionCallerAgent
+from equiaudit.models.agents.conversational_agent import ConversationalAgent
+from equiaudit.models.agents.data_analyst_agent import DataAnalystAgent
+from equiaudit.models.agents.function_caller_agent import FunctionCallerAgent
 
 
 class AgentConfig:    
