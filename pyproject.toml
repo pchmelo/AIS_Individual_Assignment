@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "equiaudit"
-version = "0.1.0"
-description = "Agentic AI framework for fairness auditing of tabular datasets"
+version = "0.1.1"
+description = "An Agentic AI Framework for Fairness Auditing"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"

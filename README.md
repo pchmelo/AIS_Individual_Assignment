@@ -3,7 +3,7 @@
 An AI-agent pipeline for evaluating datasets on data quality and fairness concerns, with an interactive Streamlit GUI, a headless CLI, and a Python API.
 
 <div align="center">
-<img src="docs/img/simple_diagram.png" alt="System overview" width="320"/>
+<img src="https://raw.githubusercontent.com/pchmelo/EquiAudit/master/docs/img/simple_diagram.png" alt="System overview" width="320"/>
 
 *A dataset is fed into EquiAudit, which coordinates AI agents under optional user supervision to produce an audit report and a bias-mitigated dataset.*
 </div>
@@ -11,13 +11,13 @@ An AI-agent pipeline for evaluating datasets on data quality and fairness concer
 ## How It Works
 
 <div align="center">
-<img src="docs/img/data_preparation_fairness_analysis.png" alt="Agent-tool-data interaction" width="600"/>
+<img src="https://raw.githubusercontent.com/pchmelo/EquiAudit/master/docs/img/data_preparation_fairness_analysis.png" alt="Agent-tool-data interaction" width="600"/>
 
 *AI agents interact bidirectionally with the analyst, invoke tools to query and compute statistics on the dataset, and synthesise findings into an audit report.*
 </div>
 
 <div align="center">
-<img src="docs/img/mitigation.png" alt="Bias mitigation workflow" width="600"/>
+<img src="https://raw.githubusercontent.com/pchmelo/EquiAudit/master/docs/img/mitigation.png" alt="Bias mitigation workflow" width="600"/>
 
 *Each selected mitigation technique produces a transformed dataset variant; tools recompute fairness statistics on every variant; the AI agent compares them against the original statistics and produces a comparative mitigation report.*
 </div>
@@ -114,14 +114,14 @@ Generated reports are saved under `reports/<dataset>_<timestamp>/` and include a
 
 ## GUI Screenshots
 
-![Framework configuration](docs/img/new_1.png)
+![Framework configuration](https://raw.githubusercontent.com/pchmelo/EquiAudit/master/docs/img/new_1.png)
 *Framework configuration (dataset selection, model backend, target column, and pipeline options).*
 
-![Sensitive attribute identification](docs/img/new_2.png)
+![Sensitive attribute identification](https://raw.githubusercontent.com/pchmelo/EquiAudit/master/docs/img/new_2.png)
 *Sensitive attribute identification (agent-generated candidate list pending analyst confirmation).*
 
-![Proxy model fairness results](docs/img/new_3.png)
+![Proxy model fairness results](https://raw.githubusercontent.com/pchmelo/EquiAudit/master/docs/img/new_3.png)
 *Proxy model fairness results (per-group metric bar charts from the outcome disparity stage).*
 
-![Previous results browser](docs/img/new_4.png)
+![Previous results browser](https://raw.githubusercontent.com/pchmelo/EquiAudit/master/docs/img/new_4.png)
 *Previous results browser (inspect and compare past audit runs).*

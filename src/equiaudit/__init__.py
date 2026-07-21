@@ -1,3 +1,3 @@
-"""EquiAudit: Agentic AI framework for fairness auditing of tabular datasets."""
+"""EquiAudit: An Agentic AI Framework for Fairness Auditing."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
