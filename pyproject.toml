@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "equiaudit"
+version = "0.1.0"
+description = "Agentic AI framework for fairness auditing of tabular datasets"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+keywords = ["fairness", "bias", "auditing", "agentic-ai", "machine-learning", "tabular-data"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "aif360==0.6.1",
+    "imbalanced-learn==0.14.1",
+    "matplotlib>=3.10",
+    "numpy>=2.2",
+    "pandas>=2.2",
+    "python-dotenv>=1.2",
+    "pyyaml>=6.0",
+    "reportlab>=4.2",
+    "requests>=2.32",
+    "scikit-learn>=1.8",
+    "scipy>=1.14",
+    "seaborn>=0.13",
+    "google-genai>=1.0",
+]
+
+[project.optional-dependencies]
+gui = ["streamlit>=1.52"]
+
+[project.scripts]
+equiaudit = "equiaudit.cli.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/pchmelo/EquiAudit"
+Repository = "https://github.com/pchmelo/EquiAudit"
+Issues = "https://github.com/pchmelo/EquiAudit/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"equiaudit.models" = ["config.yml"]
+"equiaudit.pipeline" = ["pipeline_config.yml"]
+"equiaudit.data" = ["*.csv"]

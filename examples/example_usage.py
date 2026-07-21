@@ -1,7 +1,4 @@
 import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from dotenv import load_dotenv
 
@@ -20,15 +17,15 @@ with open(CONFIG_PATH, encoding="utf-8") as f:
     _mode = (yaml.safe_load(f) or {}).get("mode", "quick")
 
 if _mode == "gui":
-    # Requires: pip install -r requirements-gui.txt
-    from gui import launch
+    # Requires: pip install "equiaudit[gui]"
+    from equiaudit.gui import launch
     launch(config_path=CONFIG_PATH, dataset_path=DATASET_PATH)
-    sys.exit(0)
+    import sys; sys.exit(0)
 
 # ---------------------------------------------------------------------------
 # CLI / headless mode
 # ---------------------------------------------------------------------------
-from cli import FairnessEvaluator
+from equiaudit.cli import FairnessEvaluator
 
 evaluator = FairnessEvaluator(config_path=CONFIG_PATH)
 

@@ -1,259 +1,147 @@
 # =============================================================================
-# Fairness Evaluation - Example Configuration
+# Agent Configuration File
 # =============================================================================
-# Copy this file and customize it for your needs.
-# Save as config.yml and pass to FairnessEvaluator(config_path="config.yml")
+# This file configures AI models, agents, tools, and pipeline stages.
 #
-# Environment Variables Required:
-#   OPENROUTER_API_KEY  - For OpenRouter models (free tier available)
-#   GOOGLE_API_KEY      - For Google Gemini models
+
+# -----------------------------------------------------------------------------
+# Models Configuration
+# -----------------------------------------------------------------------------
+# Define all available models here. Each entry is a named model that agents
+# can reference. You can have multiple models of the same provider (e.g. two
+# different local models for different tasks).
 #
-# You can also create a .env file in the same directory:
-#   OPENROUTER_API_KEY=sk-or-v1-your-key-here
-#   GOOGLE_API_KEY=your-google-key-here
-# =============================================================================
+# Required keys per model:
+#   provider: openrouter | gemini | ollama
+#
+# Provider-specific keys:
+#   openrouter  -> model, base_url (optional), model_info (optional)
+#   gemini      -> model, api_key (optional, defaults to GOOGLE_API_KEY env var)
+#   ollama      -> model, base_url (optional, defaults to http://localhost:11434)
 
 
 # -----------------------------------------------------------------------------
 # Mode
 # -----------------------------------------------------------------------------
-# How to launch the application via python example_usage.py.
-#   gui   - Streamlit web interface (requires: pip install -r requirements-gui.txt)
-#   quick - Headless evaluation driven by the settings in this file
+# How to launch the application via python main.py.
+#   gui  - Streamlit web interface (requires: pip install -r requirements-gui.txt)
+#   cli  - Command-line interface
+#   quick - Quick headless evaluation with defaults
+mode: gui
 
-mode: "gui"
+generate_detailed_report: true # If true, generates detailed_metrics_report.md and .pdf
+
+generate_executive_summary: true # If true, generates an executive summary at the start of the report
 
 
-# -----------------------------------------------------------------------------
-# Common Settings (apply to both gui and quick modes)
-# -----------------------------------------------------------------------------
+default_model: step-3.5-flash  # default model for agents that don't specify one explicitly
 
-# The target variable for analysis (change as needed)
-target_column: "Income"
-
-# Which model to use by default for all agents.
-# Must match one of the model names defined below.
-default_model: "openrouter-free"
-
-# Define available AI models. Supports three providers:
-#   - openrouter: Cloud API with many models (some free)
-#   - gemini: Google's Gemini models
-#   - ollama: Run models locally via Ollama
 models:
-  # ---- Local Ollama Model ----
-  "deepseek-r1:8b":
-    provider: ollama
-    model: "deepseek-r1:8b"
-    model_info:
-      function_calling: true
-      vision: false
-      structured_output: true
-
-  # ---- Free OpenRouter Model (Recommended for testing) ----
-  openrouter-free:
+  step-3.5-flash:
     provider: openrouter
-    model: "poolside/laguna-xs-2.1:free"
-    #model: "arcee-ai/trinity-large-preview:free"
-    #model: "nvidia/nemotron-3-super-120b-a12b:free"
+    model: "stepfun/step-3.5-flash:free"
     base_url: "https://openrouter.ai/api/v1"
     model_info:
       function_calling: true
       vision: false
       structured_output: true
 
-  # ---- Alternative Free OpenRouter Models ----
-  # Uncomment to use different free models
-
-  # llama-free:
-  #   provider: openrouter
-  #   model: "meta-llama/llama-3.2-3b-instruct:free"
-  #   base_url: "https://openrouter.ai/api/v1"
-  #   model_info:
-  #     function_calling: true
-
-  # qwen-free:
-  #   provider: openrouter
-  #   model: "qwen/qwen-2.5-72b-instruct:free"
-  #   base_url: "https://openrouter.ai/api/v1"
-  #   model_info:
-  #     function_calling: true
-
-  # ---- Paid OpenRouter Models (Better quality) ----
-  # openrouter-gpt4:
-  #   provider: openrouter
-  #   model: "openai/gpt-4o-mini"
-  #   base_url: "https://openrouter.ai/api/v1"
-  #   model_info:
-  #     function_calling: true
-
-  # openrouter-claude:
-  #   provider: openrouter
-  #   model: "anthropic/claude-3.5-sonnet"
-  #   base_url: "https://openrouter.ai/api/v1"
-  #   model_info:
-  #     function_calling: true
-
-  # ---- Google Gemini ----
   gemini-flash:
     provider: gemini
-    model: "gemini-2.0-flash"
-    # api_key: loaded from GOOGLE_API_KEY env var automatically
+    model: "gemini-2.5-flash-lite"
+    # api_key: loaded from GOOGLE_API_KEY env var
 
-  # gemini-pro:
-  #   provider: gemini
-  #   model: "gemini-1.5-pro"
+# -----------------------------------------------------------------------------
+# Tools Configuration
+# -----------------------------------------------------------------------------
+# Available tool managers that can be assigned to agents.
 
-# Available tool managers. Don't modify unless adding custom tools.
 tools:
   fairness:
     class: "FairnessTools"
     description: "Tools for fairness analysis and dataset inspection"
-
+  
   bias_mitigation:
     class: "BiasMitigationTools"
     description: "Tools for bias mitigation techniques (SMOTE, reweighting, etc.)"
 
-# Agents that perform different tasks in the pipeline.
-# Each agent can optionally specify its own model.
+# -----------------------------------------------------------------------------
+# Agents Configuration
+# -----------------------------------------------------------------------------
+# Define agents with their types, tools, and pipeline associations.
 #
 # Agent types:
-#   - FunctionCallerAgent: Executes tools/functions
+#   - FunctionCallerAgent: Executes tools based on user requests
 #   - DataAnalystAgent: Analyzes data and provides insights
-#   - ConversationalAgent: General conversation, no tools
+#   - ConversationalAgent: General conversation without tools
+#
+# Each agent can optionally specify 'model: <model_name>' to override the default_model. 
+
 agents:
   file_parser:
     type: FunctionCallerAgent
-    # model: gemini-flash  # Uncomment to use different model for this agent
+    # model: <model_name>          # uncomment to override default
     tools: [fairness]
     stages: [parsing]
     reflect_on_tool_use: true
-
+  
   inspector:
     type: FunctionCallerAgent
     tools: [fairness]
     stages: [inspection]
     reflect_on_tool_use: true
-
+  
   quality_analyst:
     type: DataAnalystAgent
     tools: [fairness]
     stages: [quality_analysis]
-
+  
   fairness_analyst:
     type: DataAnalystAgent
     tools: [fairness]
     stages: [fairness_analysis]
-
+  
   bias_mitigator:
     type: FunctionCallerAgent
     tools: [bias_mitigation]
     stages: [mitigation]
     reflect_on_tool_use: true
-
+  
   recommendation:
     type: ConversationalAgent
     tools: []
     stages: [recommendation]
 
-# Defines the order of evaluation stages.
-# Each stage can have one or more agents.
+# -----------------------------------------------------------------------------
+# Pipeline Configuration
+# -----------------------------------------------------------------------------
+# Define the order and structure of pipeline stages.
+# Each stage can have one or more agents assigned.
+
 pipeline:
   stages:
     - name: parsing
       description: "Parse and load the dataset"
       agents: [file_parser]
-
+    
     - name: inspection
       description: "Initial dataset inspection and validation"
       agents: [inspector]
-
+    
     - name: quality_analysis
       description: "Analyze data quality issues"
       agents: [quality_analyst]
-
+    
     - name: fairness_analysis
       description: "Analyze fairness and bias metrics"
       agents: [fairness_analyst]
-
+    
     - name: mitigation
       description: "Apply bias mitigation techniques"
       agents: [bias_mitigator]
-
+    
     - name: recommendation
       description: "Generate recommendations and summary"
       agents: [recommendation]
 
-sensitive_attribute_analysis:
-  # Type options:
-  #   - auto: The agent will automatically detect which sensitive attributes to
-  #           analyze based on potential fairness concerns and dataset characteristics.
-  #   - restricted: Analyze only the specific attributes listed below.
-  type: auto
-  # Only used when type is "restricted". List the column names to analyze:
-  attributes: ["Sex", "Race", "Age"]
 
-  # Enable or disable discretization of continuous sensitive attributes.
-  discretization: enable
-
-  # auto: The agent receives information from the column (max value, min value, mean, median,
-  #       standard deviation, column name) and decides the bins (with its range) or number of bins.
-  # equal_width/equal_frequency: The user passes the number of bins and method.
-  method: auto
-  number_of_bins: 5
-
-  # Minimum number of unique values for a numeric column to be considered continuous.
-  # Columns with fewer unique values are treated as already categorical.
-  continuous_threshold: 10
-
-pair_evaluation:
-  # Type options:
-  #   - auto: The agent will automatically select which sensitive attribute pairs
-  #           to analyze based on potential fairness concerns (limited by max_pairs).
-  #   - restricted: Analyze only the specific pairs listed below.
-  type: auto
-  # Maximum number of pairs when type is "auto". Set to null for all pairs.
-  max_pairs: 2
-  # Only used when type is "restricted". List the pairs to analyze:
-  # Pairs can reference ANY column in the dataset, not just the sensitive attributes above.
-  #pairs: [["Sex", "Race"], ["Age", "Education"]]
-
-mitigation_techniques:
-  # List of bias mitigation techniques to apply during the mitigation stage.
-  # Available options:
-  #   "Reweighting"          - Generic sample reweighting to balance sensitive groups
-  #   "SMOTE"                - Synthetic Minority Over-sampling Technique
-  #   "Random Oversampling"  - Random duplication of minority-class samples
-  #   "Random Undersampling" - Random removal of majority-class samples
-  #   "AIF360 Reweighing"    - Fairness-aware sample weights via AIF360 (Kamiran & Calders, 2012).
-  #                            Directly minimises statistical parity difference between groups.
-  #                            Requires: pip install aif360 BlackBoxAuditing
-  techniques: ["Reweighting", "SMOTE", "AIF360 Reweighing"]
-
-ml_evaluation:
-  # The ML model type to use for target fairness and mitigation comparisons.
-  # Options: "Random Forest", "Gradient Boosting", "Logistic Regression", "SVC"; Default: "Random Forest"
-  model_type: "Random Forest"
-
-  # Default parameters for each ML model
-  # "Random Forest":   n_estimators: 100, max_depth: null
-  # "Gradient Boosting": n_estimators: 100, learning_rate: 0.1, max_depth: 3
-  # "Logistic Regression": C: 1.0, penalty: "l2"
-  # "SVC": C: 1.0, kernel: "rbf"
-  model_params:
-    "Random Forest":
-      n_estimators: 100
-      max_depth: null
-
-
-# -----------------------------------------------------------------------------
-# Headless Settings (apply to quick mode only)
-# -----------------------------------------------------------------------------
-
-# If true, runs a secondary agent over generated analysis to improve readability
-use_humanizer: false
-
-# If true, generates detailed_metrics_report.md and .pdf with comprehensive group metrics
-generate_detailed_report: true
-
-# If true, runs a final agent to synthesize all findings into a top-level summary
-generate_executive_summary: true
